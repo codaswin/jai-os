@@ -75,7 +75,7 @@ describe('MCP Controller (integration)', () => {
         expect(res.body.result.protocolVersion).toBe(MCP_PROTOCOL_VERSION);
         expect(res.body.result.capabilities).toBeDefined();
         expect(res.body.result.serverInfo).toBeDefined();
-        expect(res.body.result.serverInfo.name).toBe('Twenty MCP Server');
+        expect(res.body.result.serverInfo.name).toBe('Jai OS MCP Server');
         expect(typeof res.body.result.instructions).toBe('string');
       });
   });

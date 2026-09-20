@@ -219,7 +219,7 @@ export const SettingsWorkspaceCommunicationGroupChannelDetail = () => {
           <Section>
             <H2Title
               title={t`Sending domain`}
-              description={t`Add these records at your DNS provider. Twenty checks them automatically.`}
+              description={t`Add these records at your DNS provider. Jai OS checks them automatically.`}
             />
             <StyledSendingDomainColumn>
               <StyledInputRow>

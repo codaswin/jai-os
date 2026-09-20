@@ -98,7 +98,7 @@ const AddPaymentMethodFormContent = ({
       if (!isDefined(clientSecret)) {
         enqueueToast({
           variant: 'error',
-          children: t`Subscription error. Please retry or contact Twenty team`,
+          children: t`Subscription error. Please retry or contact Jai OS team`,
         });
         setIsSubmitting(false);
         return;
@@ -131,7 +131,7 @@ const AddPaymentMethodFormContent = ({
       } else {
         enqueueToast({
           variant: 'error',
-          children: t`Subscription error. Please retry or contact Twenty team`,
+          children: t`Subscription error. Please retry or contact Jai OS team`,
         });
       }
       setIsSubmitting(false);

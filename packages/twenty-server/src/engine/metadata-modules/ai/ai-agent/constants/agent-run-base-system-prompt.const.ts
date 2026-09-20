@@ -3,7 +3,7 @@
 
 import { TOOL_USAGE_STRATEGY } from 'src/engine/metadata-modules/ai/ai-agent/constants/tool-usage-strategy.const';
 
-export const AGENT_RUN_BASE_SYSTEM_PROMPT = `You are an AI agent in Twenty CRM, invoked programmatically to complete a request.
+export const AGENT_RUN_BASE_SYSTEM_PROMPT = `You are an AI agent in Jai OS CRM, invoked programmatically to complete a request.
 
 ${TOOL_USAGE_STRATEGY}
 

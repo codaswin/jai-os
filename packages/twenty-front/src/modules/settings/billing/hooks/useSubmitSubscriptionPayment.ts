@@ -62,7 +62,7 @@ export const useSubmitSubscriptionPayment = ({
       if (!isDefined(paymentIntent?.clientSecret)) {
         enqueueToast({
           variant: 'error',
-          children: t`Subscription error. Please retry or contact Twenty team`,
+          children: t`Subscription error. Please retry or contact Jai OS team`,
         });
         setIsSubmitting(false);
         return;
@@ -101,7 +101,7 @@ export const useSubmitSubscriptionPayment = ({
       } else {
         enqueueToast({
           variant: 'error',
-          children: t`Subscription error. Please retry or contact Twenty team`,
+          children: t`Subscription error. Please retry or contact Jai OS team`,
         });
       }
       setIsSubmitting(false);
