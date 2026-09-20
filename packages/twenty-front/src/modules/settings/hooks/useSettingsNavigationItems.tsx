@@ -2,11 +2,9 @@ import { SettingsPath } from 'twenty-shared/types';
 
 import { useAuth } from '@/auth/hooks/useAuth';
 import { currentUserState } from '@/auth/states/currentUserState';
-import { currentWorkspaceMemberState } from '@/auth/states/currentWorkspaceMemberState';
 import { billingState } from '@/client-config/states/billingState';
 import { supportChatState } from '@/client-config/states/supportChatState';
 import { usePermissionFlagMap } from '@/settings/roles/hooks/usePermissionFlagMap';
-import { getDocumentationUrl } from '@/support/utils/getDocumentationUrl';
 import {
   type NavigationDrawerItemIndentationLevel,
   type NavigationDrawerItemModifier,
@@ -23,7 +21,6 @@ import {
   type IconComponent,
   IconCreditCard,
   IconDoorEnter,
-  IconHelpCircle,
   IconHierarchy,
   IconMail,
   IconMessage,
@@ -60,7 +57,6 @@ const useSettingsNavigationItems = (): SettingsNavigationSection[] => {
   const billing = useAtomStateValue(billingState);
   const { signOut } = useAuth();
   const supportChat = useAtomStateValue(supportChatState);
-  const currentWorkspaceMember = useAtomStateValue(currentWorkspaceMemberState);
 
   const isBillingEnabled = billing?.isBillingEnabled ?? false;
   const currentUser = useAtomStateValue(currentUserState);
@@ -187,25 +183,10 @@ const useSettingsNavigationItems = (): SettingsNavigationSection[] => {
           isHidden: !isAdminEnabled,
         },
         {
-          label: t`Community`,
-          path: SettingsPath.Community,
-          Icon: IconUsers,
-          isHidden: !permissionMap[PermissionFlagType.WORKSPACE],
-        },
-        {
           label: t`Support`,
           onClick: () => window.FrontChat?.('show'),
           Icon: IconMessage,
           isHidden: !isSupportChatConfigured,
-        },
-        {
-          label: t`Documentation`,
-          onClick: () =>
-            window.open(
-              getDocumentationUrl({ locale: currentWorkspaceMember?.locale }),
-              '_blank',
-            ),
-          Icon: IconHelpCircle,
         },
         {
           label: t`Logout`,
