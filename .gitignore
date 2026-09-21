@@ -2,6 +2,7 @@
 /ops/secrets/
 /ops/backups/
 /ops/logs/
+/err/
 /jai-os-docs/JAI-OS-Commercial-Implementation-Agreement.html
 .DS_Store
 /.idea

@@ -51,7 +51,7 @@ Versions are pinned in `docker-compose.yml` (and `TAG` in `.env` for Twenty). No
 
 1. Read the Twenty release notes for the target version.
 2. Cut a new release branch from the upstream tag (`git fetch https://github.com/twentyhq/twenty.git refs/tags/twenty/vX.Y.Z:refs/tags/twenty/vX.Y.Z`), cherry-pick our patches from the previous `jai-twenty-*` branch, push it.
-3. Run the "Build JAI OS Twenty image" workflow with that ref, a new tag and the upstream version.
+3. Run the "Build JAI OS Twenty image" workflow (`gh workflow run build-jai-os-image.yaml --ref main -f ref=<branch> -f tag=<tag> -f app_version=<upstream version>`). It takes about 16 minutes. The front build needs roughly an 8GB Node heap, so a local build needs more than 8GB RAM or added swap.
 4. Run `scripts/backup.sh`, then `scripts/restore-test.sh`.
 5. Try the new `TAG` on a local copy with synthetic data first.
 6. Change `TAG`, `docker compose pull && docker compose up -d`.
