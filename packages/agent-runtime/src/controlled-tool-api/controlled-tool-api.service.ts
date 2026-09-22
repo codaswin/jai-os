@@ -5,18 +5,21 @@ import { TOOL_REGISTRY } from './tool-registry';
 import { TwentyGraphqlClientService } from './twenty-graphql-client.service';
 import { type AgentIdentity } from './types';
 
-type ExecutedAction = {
+type TrackedAction = {
   toolName: string;
   payloadKey: string;
-  result: unknown;
+  resultPromise: Promise<unknown>;
 };
+
+// Interim in-memory duplicate protection: enough to prove the boundary
+// rejects a repeated action ID now, including a concurrent retry racing
+// the first call. Ticket #7/#11 replace this with a persistent,
+// restart-safe store once the agent database exists.
+const MAX_TRACKED_ACTIONS = 10_000;
 
 @Injectable()
 export class ControlledToolApiService {
-  // Interim in-memory duplicate protection: enough to prove the boundary
-  // rejects a repeated action ID now. Ticket #7/#11 replace this with a
-  // persistent, restart-safe store once the agent database exists.
-  private readonly executedActions = new Map<string, ExecutedAction>();
+  private readonly trackedActions = new Map<string, TrackedAction>();
 
   constructor(private readonly twenty: TwentyGraphqlClientService) {}
 
@@ -41,20 +44,44 @@ export class ControlledToolApiService {
     }
 
     const payloadKey = JSON.stringify(payload);
-    const previous = this.executedActions.get(actionId);
+    const existing = this.trackedActions.get(actionId);
 
-    if (previous) {
-      if (previous.toolName !== toolName || previous.payloadKey !== payloadKey) {
-        throw new ActionIdReusedError(actionId, previous.toolName, toolName);
+    if (existing) {
+      if (existing.toolName !== toolName) {
+        throw new ActionIdReusedError(actionId, 'a different tool');
       }
 
-      return previous.result;
+      if (existing.payloadKey !== payloadKey) {
+        throw new ActionIdReusedError(actionId, 'a different payload');
+      }
+
+      return existing.resultPromise;
     }
 
-    const result = await tool.execute(payload, this.twenty);
+    // Reserve the slot synchronously, before awaiting anything, so a
+    // concurrent call with the same actionId finds this entry instead of
+    // racing past the same "not present yet" check and double-executing.
+    const resultPromise = tool.execute(payload, this.twenty);
 
-    this.executedActions.set(actionId, { toolName, payloadKey, result });
+    this.trackFor(actionId, { toolName, payloadKey, resultPromise });
 
-    return result;
+    // A failed call didn't actually complete the action, so a genuine
+    // retry with the same actionId should get to try again rather than
+    // replaying the same rejection forever.
+    resultPromise.catch(() => this.trackedActions.delete(actionId));
+
+    return resultPromise;
+  }
+
+  private trackFor(actionId: string, action: TrackedAction): void {
+    if (this.trackedActions.size >= MAX_TRACKED_ACTIONS) {
+      const oldestActionId = this.trackedActions.keys().next().value;
+
+      if (oldestActionId !== undefined) {
+        this.trackedActions.delete(oldestActionId);
+      }
+    }
+
+    this.trackedActions.set(actionId, action);
   }
 }

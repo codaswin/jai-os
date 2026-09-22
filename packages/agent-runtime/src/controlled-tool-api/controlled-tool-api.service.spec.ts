@@ -124,4 +124,52 @@ describe('ControlledToolApiService', () => {
 
     expect(twentyRequest).toHaveBeenCalledTimes(1);
   });
+
+  it('executes a concurrent retry with the same action ID only once', async () => {
+    const [first, second] = await Promise.all([
+      service.callTool(
+        readScopedIdentity,
+        'lookup-person-by-email',
+        { email: 'jane@example.com' },
+        'action-6',
+      ),
+      service.callTool(
+        readScopedIdentity,
+        'lookup-person-by-email',
+        { email: 'jane@example.com' },
+        'action-6',
+      ),
+    ]);
+
+    expect(second).toEqual(first);
+    expect(twentyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a retry with the same action ID succeed after the first attempt failed', async () => {
+    twentyRequest.mockRejectedValueOnce(new Error('transient failure'));
+
+    await expect(
+      service.callTool(
+        readScopedIdentity,
+        'lookup-person-by-email',
+        { email: 'jane@example.com' },
+        'action-7',
+      ),
+    ).rejects.toThrow('transient failure');
+
+    const result = await service.callTool(
+      readScopedIdentity,
+      'lookup-person-by-email',
+      { email: 'jane@example.com' },
+      'action-7',
+    );
+
+    expect(result).toEqual({
+      id: 'person-1',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      primaryEmail: 'jane@example.com',
+    });
+    expect(twentyRequest).toHaveBeenCalledTimes(2);
+  });
 });

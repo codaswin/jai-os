@@ -23,6 +23,14 @@ export class TwentyGraphqlClientService implements TwentyGraphqlClient {
       body: JSON.stringify({ query, variables }),
     });
 
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+
+      throw new Error(
+        `Twenty GraphQL request failed: ${response.status} ${response.statusText}${text ? ` — ${text.slice(0, 500)}` : ''}`,
+      );
+    }
+
     const body = (await response.json()) as {
       data?: TResult;
       errors?: { message: string }[];

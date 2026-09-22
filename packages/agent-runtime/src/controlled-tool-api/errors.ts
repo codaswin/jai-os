@@ -6,10 +6,8 @@ export class UnknownToolError extends Error {
 }
 
 export class ActionIdReusedError extends Error {
-  constructor(actionId: string, previousToolName: string, toolName: string) {
-    super(
-      `Action ID "${actionId}" was already used for tool "${previousToolName}", not "${toolName}"`,
-    );
+  constructor(actionId: string, reason: 'a different tool' | 'a different payload') {
+    super(`Action ID "${actionId}" was already used with ${reason}`);
     this.name = 'ActionIdReusedError';
   }
 }
