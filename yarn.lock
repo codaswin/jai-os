@@ -24582,6 +24582,28 @@ __metadata:
   languageName: node
   linkType: hard
 
+"agent-runtime@workspace:packages/agent-runtime":
+  version: 0.0.0-use.local
+  resolution: "agent-runtime@workspace:packages/agent-runtime"
+  dependencies:
+    "@nestjs/cli": "npm:^11.0.16"
+    "@nestjs/common": "npm:11.2.1"
+    "@nestjs/config": "npm:^4.0.4"
+    "@nestjs/core": "npm:^11.2.1"
+    "@nestjs/platform-express": "npm:11.2.1"
+    "@nestjs/schematics": "npm:^11.0.9"
+    "@nestjs/testing": "npm:11.2.1"
+    "@swc/core": "npm:^1.15.11"
+    "@swc/jest": "npm:^0.2.39"
+    "@types/jest": "npm:^30.0.0"
+    "@types/node": "npm:^24.0.0"
+    jest: "npm:29.7.0"
+    reflect-metadata: "npm:0.2.2"
+    rxjs: "npm:7.8.1"
+    typescript: "npm:^5.9.3"
+  languageName: unknown
+  linkType: soft
+
 "agentkeepalive@npm:^4.2.1":
   version: 4.5.0
   resolution: "agentkeepalive@npm:4.5.0"
