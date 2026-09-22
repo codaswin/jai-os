@@ -34,6 +34,10 @@ export class TwentyGraphqlClientService implements TwentyGraphqlClient {
       );
     }
 
-    return body.data as TResult;
+    if (body.data === undefined) {
+      throw new Error('Twenty GraphQL response had neither data nor errors');
+    }
+
+    return body.data;
   }
 }

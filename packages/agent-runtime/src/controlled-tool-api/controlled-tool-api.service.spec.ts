@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 
 import { ControlledToolApiService } from './controlled-tool-api.service';
-import { PermissionScopeError, UnknownToolError } from './errors';
+import { ActionIdReusedError, PermissionScopeError, UnknownToolError } from './errors';
 import { TwentyGraphqlClientService } from './twenty-graphql-client.service';
 import { type AgentIdentity } from './types';
 
@@ -102,6 +102,26 @@ describe('ControlledToolApiService', () => {
     );
 
     expect(second).toEqual(first);
+    expect(twentyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a reused action ID called with a different payload, rather than returning the stale result', async () => {
+    await service.callTool(
+      readScopedIdentity,
+      'lookup-person-by-email',
+      { email: 'jane@example.com' },
+      'action-5',
+    );
+
+    await expect(
+      service.callTool(
+        readScopedIdentity,
+        'lookup-person-by-email',
+        { email: 'someone-else@example.com' },
+        'action-5',
+      ),
+    ).rejects.toThrow(ActionIdReusedError);
+
     expect(twentyRequest).toHaveBeenCalledTimes(1);
   });
 });

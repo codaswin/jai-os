@@ -1,16 +1,22 @@
 import { Injectable } from '@nestjs/common';
 
-import { PermissionScopeError, UnknownToolError } from './errors';
+import { ActionIdReusedError, PermissionScopeError, UnknownToolError } from './errors';
 import { TOOL_REGISTRY } from './tool-registry';
 import { TwentyGraphqlClientService } from './twenty-graphql-client.service';
 import { type AgentIdentity } from './types';
+
+type ExecutedAction = {
+  toolName: string;
+  payloadKey: string;
+  result: unknown;
+};
 
 @Injectable()
 export class ControlledToolApiService {
   // Interim in-memory duplicate protection: enough to prove the boundary
   // rejects a repeated action ID now. Ticket #7/#11 replace this with a
   // persistent, restart-safe store once the agent database exists.
-  private readonly executedActions = new Map<string, unknown>();
+  private readonly executedActions = new Map<string, ExecutedAction>();
 
   constructor(private readonly twenty: TwentyGraphqlClientService) {}
 
@@ -34,13 +40,20 @@ export class ControlledToolApiService {
       );
     }
 
-    if (this.executedActions.has(actionId)) {
-      return this.executedActions.get(actionId);
+    const payloadKey = JSON.stringify(payload);
+    const previous = this.executedActions.get(actionId);
+
+    if (previous) {
+      if (previous.toolName !== toolName || previous.payloadKey !== payloadKey) {
+        throw new ActionIdReusedError(actionId, previous.toolName, toolName);
+      }
+
+      return previous.result;
     }
 
     const result = await tool.execute(payload, this.twenty);
 
-    this.executedActions.set(actionId, result);
+    this.executedActions.set(actionId, { toolName, payloadKey, result });
 
     return result;
   }

@@ -5,6 +5,15 @@ export class UnknownToolError extends Error {
   }
 }
 
+export class ActionIdReusedError extends Error {
+  constructor(actionId: string, previousToolName: string, toolName: string) {
+    super(
+      `Action ID "${actionId}" was already used for tool "${previousToolName}", not "${toolName}"`,
+    );
+    this.name = 'ActionIdReusedError';
+  }
+}
+
 export class PermissionScopeError extends Error {
   constructor(agentId: string, toolName: string, requiredScope: string) {
     super(
