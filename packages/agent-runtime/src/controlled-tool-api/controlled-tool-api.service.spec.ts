@@ -1,0 +1,107 @@
+import { Test } from '@nestjs/testing';
+
+import { ControlledToolApiService } from './controlled-tool-api.service';
+import { PermissionScopeError, UnknownToolError } from './errors';
+import { TwentyGraphqlClientService } from './twenty-graphql-client.service';
+import { type AgentIdentity } from './types';
+
+describe('ControlledToolApiService', () => {
+  let service: ControlledToolApiService;
+  let twentyRequest: jest.Mock;
+
+  const readScopedIdentity: AgentIdentity = {
+    agentId: 'test-agent',
+    scopes: ['person:read'],
+  };
+
+  const unscopedIdentity: AgentIdentity = {
+    agentId: 'unscoped-agent',
+    scopes: [],
+  };
+
+  const personQueryResult = {
+    people: {
+      edges: [
+        {
+          node: {
+            id: 'person-1',
+            name: { firstName: 'Jane', lastName: 'Doe' },
+            emails: { primaryEmail: 'jane@example.com' },
+          },
+        },
+      ],
+    },
+  };
+
+  beforeEach(async () => {
+    twentyRequest = jest.fn().mockResolvedValue(personQueryResult);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ControlledToolApiService,
+        {
+          provide: TwentyGraphqlClientService,
+          useValue: { request: twentyRequest },
+        },
+      ],
+    }).compile();
+
+    service = moduleRef.get(ControlledToolApiService);
+  });
+
+  it('rejects an unknown tool name', async () => {
+    await expect(
+      service.callTool(readScopedIdentity, 'not-a-real-tool', {}, 'action-1'),
+    ).rejects.toThrow(UnknownToolError);
+
+    expect(twentyRequest).not.toHaveBeenCalled();
+  });
+
+  it('rejects a call outside the caller permission scope, even though the tool is whitelisted', async () => {
+    await expect(
+      service.callTool(
+        unscopedIdentity,
+        'lookup-person-by-email',
+        { email: 'jane@example.com' },
+        'action-2',
+      ),
+    ).rejects.toThrow(PermissionScopeError);
+
+    expect(twentyRequest).not.toHaveBeenCalled();
+  });
+
+  it('produces the correct Twenty-side effect on a permitted call', async () => {
+    const result = await service.callTool(
+      readScopedIdentity,
+      'lookup-person-by-email',
+      { email: 'jane@example.com' },
+      'action-3',
+    );
+
+    expect(result).toEqual({
+      id: 'person-1',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      primaryEmail: 'jane@example.com',
+    });
+    expect(twentyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('executes the same action ID once, returning the cached result on repeat', async () => {
+    const first = await service.callTool(
+      readScopedIdentity,
+      'lookup-person-by-email',
+      { email: 'jane@example.com' },
+      'action-4',
+    );
+    const second = await service.callTool(
+      readScopedIdentity,
+      'lookup-person-by-email',
+      { email: 'jane@example.com' },
+      'action-4',
+    );
+
+    expect(second).toEqual(first);
+    expect(twentyRequest).toHaveBeenCalledTimes(1);
+  });
+});
