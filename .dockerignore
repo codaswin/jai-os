@@ -1,5 +1,7 @@
 .git
 .env
 **/node_modules
+**/dist
+**/*.tsbuildinfo
 .nx/cache
 packages/twenty-server/.env

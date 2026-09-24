@@ -4,7 +4,7 @@ Runs our own build of Twenty: upstream release plus a small patch (see `docs/adr
 
 ## Layout
 
-- `docker-compose.yml`: caddy, server, worker, db, redis. Only caddy publishes ports. db and redis sit on an internal network with no route out.
+- `docker-compose.yml`: caddy, server, worker, db, redis, agent-runtime. Only caddy publishes ports. db, redis and agent-runtime sit on an internal network with no route out.
 - `Caddyfile`: automatic TLS for `$DOMAIN`.
 - `scripts/`: `init-env.sh`, `backup.sh`, `restore-test.sh`, `healthcheck.sh`.
 - Not in git: `.env` (secrets), `secrets/` (restic password, SSH key), `backups/`, `logs/`.
@@ -20,6 +20,12 @@ docker compose up -d
 DNS for the domain must point at the VPS before the first start so Caddy can get a certificate. Then create the first admin in the UI. Staff get the Member role. Install the Invoice app from `packages/twenty-apps/internal/invoice`.
 
 Store a copy of `secrets/restic-password` and `.env` somewhere other than this VPS. Without the restic password the backups cannot be read.
+
+## agent-runtime
+
+The service the agent-plumbing work (Phase 2, `jai-os-docs/08-build-phases.md`) lands in — the Controlled Tool API and everything built on top of it. Builds locally from `packages/agent-runtime` (`docker compose build agent-runtime`); it's a lean NestJS backend, not Twenty's front end, so it doesn't need the ~8GB heap the Twenty image build does. Sits on the internal `private` network only, no public route.
+
+It needs its own Twenty API key, generated after the first admin exists: Settings → APIs → generate a key, then add `AGENT_RUNTIME_TWENTY_API_KEY=<key>` to `.env`. `docker compose up` fails fast with a clear error if that variable is missing.
 
 ## Backups
 
