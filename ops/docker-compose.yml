@@ -113,7 +113,7 @@ services:
     logging: *logging
 
   llm-guard:
-    image: laiyer/llm-guard-api:latest
+    image: laiyer/llm-guard-api:0.3.16
     restart: always
     volumes:
       - ./llm-guard/scanners.yml:/home/user/app/config/scanners.yml:ro

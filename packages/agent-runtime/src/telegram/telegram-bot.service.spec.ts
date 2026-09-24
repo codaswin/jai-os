@@ -48,6 +48,36 @@ describe('TelegramBotService', () => {
     });
   });
 
+  describe('onModuleDestroy', () => {
+    it('waits for the in-flight poll loop to exit before resolving', async () => {
+      let resolvePollFetch = () => {};
+      fetchMock.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolvePollFetch = () =>
+              resolve({ ok: true, json: () => Promise.resolve({ result: [] }) });
+          }),
+      );
+
+      service.onModuleInit();
+      await Promise.resolve();
+
+      let destroyResolved = false;
+      const destroyPromise = service.onModuleDestroy().then(() => {
+        destroyResolved = true;
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(destroyResolved).toBe(false);
+
+      resolvePollFetch();
+      await destroyPromise;
+
+      expect(destroyResolved).toBe(true);
+    });
+  });
+
   describe('handleUpdate', () => {
     it('logs a message from the founder chat', () => {
       const logSpy = jest.spyOn(service['logger'], 'log');

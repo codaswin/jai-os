@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 
-import { ActionIdReusedError, PermissionScopeError, UnknownToolError } from './errors';
+import { stableStringify } from '../shared/stable-stringify';
+import {
+  ActionIdReusedError,
+  InvalidPayloadError,
+  PermissionScopeError,
+  UnknownToolError,
+} from './errors';
 import { TOOL_REGISTRY } from './tool-registry';
 import { TwentyGraphqlClientService } from './twenty-graphql-client.service';
 import { type AgentIdentity } from './types';
@@ -43,7 +49,13 @@ export class ControlledToolApiService {
       );
     }
 
-    const payloadKey = JSON.stringify(payload);
+    const parsedPayload = tool.payloadSchema.safeParse(payload);
+
+    if (!parsedPayload.success) {
+      throw new InvalidPayloadError(toolName, parsedPayload.error.message);
+    }
+
+    const payloadKey = stableStringify(parsedPayload.data);
     const existing = this.trackedActions.get(actionId);
 
     if (existing) {
@@ -61,7 +73,7 @@ export class ControlledToolApiService {
     // Reserve the slot synchronously, before awaiting anything, so a
     // concurrent call with the same actionId finds this entry instead of
     // racing past the same "not present yet" check and double-executing.
-    const resultPromise = tool.execute(payload, this.twenty);
+    const resultPromise = tool.execute(parsedPayload.data, this.twenty);
 
     this.trackFor(actionId, { toolName, payloadKey, resultPromise });
 

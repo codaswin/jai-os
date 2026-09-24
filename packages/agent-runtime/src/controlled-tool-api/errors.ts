@@ -5,6 +5,13 @@ export class UnknownToolError extends Error {
   }
 }
 
+export class InvalidPayloadError extends Error {
+  constructor(toolName: string, issues: string) {
+    super(`Payload for tool "${toolName}" failed validation: ${issues}`);
+    this.name = 'InvalidPayloadError';
+  }
+}
+
 export class ActionIdReusedError extends Error {
   constructor(actionId: string, reason: 'a different tool' | 'a different payload') {
     super(`Action ID "${actionId}" was already used with ${reason}`);
