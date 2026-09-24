@@ -24,6 +24,7 @@ const DEMO_THREAD_ID = 'agent-graph-demo';
 export class AgentGraphService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AgentGraphService.name);
   private readonly checkpointer: PostgresSaver;
+  private initPromise: Promise<void> = Promise.resolve();
 
   constructor(configService: ConfigService) {
     this.checkpointer = PostgresSaver.fromConnString(
@@ -32,12 +33,15 @@ export class AgentGraphService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
-    // Fire-and-forget: an unreachable/unprovisioned agent DB must not block the
-    // rest of the app (Telegram, /healthz) from starting.
-    void this.initializeAndRunDemo();
+    // Fire-and-forget from the caller's perspective: an unreachable/
+    // unprovisioned agent DB must not block the rest of the app (Telegram,
+    // /healthz) from starting. Tracked here (not `void`) so onModuleDestroy
+    // can wait for it before closing the pool it's still using.
+    this.initPromise = this.initializeAndRunDemo();
   }
 
   async onModuleDestroy(): Promise<void> {
+    await this.initPromise;
     await this.checkpointer.end();
   }
 

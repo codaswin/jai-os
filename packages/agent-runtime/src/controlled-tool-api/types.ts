@@ -1,3 +1,5 @@
+import { type ZodType } from 'zod';
+
 export type AgentIdentity = {
   agentId: string;
   scopes: string[];
@@ -6,6 +8,9 @@ export type AgentIdentity = {
 export type ToolDefinition<TPayload, TResult> = {
   name: string;
   requiredScope: string;
+  // Validated at the Controlled Tool API boundary before execute() ever
+  // sees the payload — the boundary is the enforcement point, not each tool.
+  payloadSchema: ZodType<TPayload>;
   execute: (payload: TPayload, twenty: TwentyGraphqlClient) => Promise<TResult>;
 };
 
@@ -24,6 +29,7 @@ export type TwentyGraphqlClient = {
 export type RegisteredTool = {
   name: string;
   requiredScope: string;
+  payloadSchema: ZodType<unknown>;
   execute: (payload: unknown, twenty: TwentyGraphqlClient) => Promise<unknown>;
 };
 
@@ -32,5 +38,6 @@ export const registerTool = <TPayload, TResult>(
 ): RegisteredTool => ({
   name: tool.name,
   requiredScope: tool.requiredScope,
+  payloadSchema: tool.payloadSchema as unknown as RegisteredTool['payloadSchema'],
   execute: tool.execute as unknown as RegisteredTool['execute'],
 });
