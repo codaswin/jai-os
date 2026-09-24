@@ -121,7 +121,8 @@ services:
     environment:
       AUTH_TOKEN: ${LLM_GUARD_AUTH_TOKEN:?}
     healthcheck:
-      test: wget -qO- http://localhost:8000/healthz || exit 1
+      # No wget/curl in this image, only Python.
+      test: python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"
       interval: 10s
       timeout: 5s
       retries: 10
