@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@ai-sdk/fireworks": "3.0.55",
-    "@ai-sdk/openai": "4.0.69",
+    "@ai-sdk/openai": "4.0.70",
     "@ai-sdk/otel": "1.0.106",
     "@arizeai/openinference-core": "2.7.1",
     "@arizeai/openinference-semantic-conventions": "2.12.0",
