@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { throwOnFailedResponse } from '../shared/throw-on-failed-response';
 import { type TwentyGraphqlClient } from './types';
 
 @Injectable()
@@ -23,13 +24,7 @@ export class TwentyGraphqlClientService implements TwentyGraphqlClient {
       body: JSON.stringify({ query, variables }),
     });
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-
-      throw new Error(
-        `Twenty GraphQL request failed: ${response.status} ${response.statusText}${text ? ` — ${text.slice(0, 500)}` : ''}`,
-      );
-    }
+    await throwOnFailedResponse(response, 'Twenty GraphQL request');
 
     const body = (await response.json()) as {
       data?: TResult;
