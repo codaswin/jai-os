@@ -1,0 +1,45 @@
+app:
+  name: ${APP_NAME:LLM Guard API}
+  log_level: ${LOG_LEVEL:INFO}
+  log_json: ${LOG_JSON:true}
+  scan_fail_fast: ${SCAN_FAIL_FAST:false}
+  scan_prompt_timeout: ${SCAN_PROMPT_TIMEOUT:20}
+  scan_output_timeout: ${SCAN_OUTPUT_TIMEOUT:20}
+  lazy_load: ${LAZY_LOAD:true}
+
+rate_limit:
+  enabled: ${RATE_LIMIT_ENABLED:false}
+  limit: ${RATE_LIMIT_LIMIT:100/minute}
+
+auth:
+  type: http_bearer
+  token: ${AUTH_TOKEN:}
+
+# Ticket #18: PII leakage, prompt injection, and toxicity. agent-runtime calls
+# /scan/prompt twice per input (once with each of the other two suppressed) so
+# it can tell a prompt-injection positive apart from a PII/toxicity one — that
+# split decides whether a Telegram alert fires, see src/llm/llm.service.ts.
+input_scanners:
+  - type: Anonymize
+    params:
+      use_faker: false
+      threshold: 0.75
+  - type: PromptInjection
+    params:
+      threshold: 0.92
+      match_type: truncate_head_tail
+      model_max_length: 256
+  - type: Toxicity
+    params:
+      threshold: 0.9
+      model_max_length: 256
+
+output_scanners:
+  - type: Sensitive
+    params:
+      redact: false
+      threshold: 0.75
+  - type: Toxicity
+    params:
+      threshold: 0.9
+      model_max_length: 256

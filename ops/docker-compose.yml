@@ -112,6 +112,26 @@ services:
     mem_limit: 512m
     logging: *logging
 
+  llm-guard:
+    image: laiyer/llm-guard-api:latest
+    restart: always
+    volumes:
+      - ./llm-guard/scanners.yml:/home/user/app/config/scanners.yml:ro
+      - llm-guard-models:/home/user/app/.cache
+    environment:
+      AUTH_TOKEN: ${LLM_GUARD_AUTH_TOKEN:?}
+    healthcheck:
+      test: wget -qO- http://localhost:8000/healthz || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Outbound-only internet on top of `private` (like agent-runtime): models
+    # are lazy-loaded from Hugging Face on first scan, not at container start.
+    networks: [web, private]
+    mem_limit: 2g
+    cpus: 1
+    logging: *logging
+
   agent-runtime:
     build:
       context: ..
@@ -126,6 +146,8 @@ services:
       FIREWORKS_API_KEY: ${FIREWORKS_API_KEY:?}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       AGENT_DB_URL: postgres://${AGENT_DB_USER:?}:${AGENT_DB_PASSWORD:?}@db:5432/${AGENT_DB_NAME:?}
+      LLM_GUARD_API_URL: http://llm-guard:8000
+      LLM_GUARD_AUTH_TOKEN: ${LLM_GUARD_AUTH_TOKEN:?}
     healthcheck:
       test: wget -qO- http://localhost:3100/healthz || exit 1
       interval: 10s
@@ -135,6 +157,8 @@ services:
       db:
         condition: service_healthy
       server:
+        condition: service_healthy
+      llm-guard:
         condition: service_healthy
     networks: [web, private]
     mem_limit: 256m
@@ -151,3 +175,4 @@ volumes:
   server-local-data:
   caddy-data:
   caddy-config:
+  llm-guard-models:

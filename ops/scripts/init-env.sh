@@ -26,5 +26,6 @@ ENCRYPTION_KEY=$(openssl rand -base64 32)
 AGENT_DB_NAME=agent
 AGENT_DB_USER=agent_runtime
 AGENT_DB_PASSWORD=$(openssl rand -hex 24)
+LLM_GUARD_AUTH_TOKEN=$(openssl rand -hex 24)
 EOF
 echo "wrote $env_file"
