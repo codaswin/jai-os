@@ -1,0 +1,9 @@
+# Validate payloads at the boundary and track shutdown lifecycles
+
+The Controlled Tool API (`controlled-tool-api.service.ts`) now validates every payload against the tool's own `payloadSchema` (zod) before `execute()` runs, instead of trusting `unknown` all the way into tool code — a malformed payload used to throw a raw `TypeError` deep inside a tool instead of a clear `InvalidPayloadError` at the boundary that's supposed to be the single enforcement point. The action-ID dedup cache key also switched from raw `JSON.stringify(payload)` to `stableStringify` (`shared/stable-stringify.ts`), which sorts object keys recursively — plain `JSON.stringify` treats `{a,b}` and `{b,a}` as different cache keys, which would wrongly reject a legitimate retry as a payload mismatch once a tool takes more than one field.
+
+`AgentGraphService` and `TelegramBotService` both start fire-and-forget async work in `onModuleInit` (a checkpoint-setup/demo run and a poll loop) while depending on a resource that `onModuleDestroy` tears down (the Postgres pool, the abort controller). Both now track that startup promise and `await` it in `onModuleDestroy` before releasing the resource, closing a race where a fast restart could close the pool or abort the loop while the startup work was still using it. Any future service with the same fire-and-forget-startup-plus-shared-resource shape should follow the same pattern rather than firing `onModuleInit` with a bare `void`.
+
+`llm-guard` in `ops/docker-compose.yml` is now pinned to `0.3.16` instead of `:latest`, matching every other image's pinning policy documented in `ops/README.md`.
+
+Landed alongside: a CI workflow for `agent-runtime` (`.github/workflows/ci-agent-runtime.yaml` — typecheck/test/build on every PR touching the package, which didn't exist before despite five commits of real logic) and this package's first `CONTEXT.md`.
