@@ -23,5 +23,8 @@ PG_DATABASE_NAME=default
 PG_DATABASE_USER=twenty
 PG_DATABASE_PASSWORD=$(openssl rand -hex 24)
 ENCRYPTION_KEY=$(openssl rand -base64 32)
+AGENT_DB_NAME=agent
+AGENT_DB_USER=agent_runtime
+AGENT_DB_PASSWORD=$(openssl rand -hex 24)
 EOF
 echo "wrote $env_file"

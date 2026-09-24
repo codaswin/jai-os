@@ -81,10 +81,14 @@ services:
     restart: always
     volumes:
       - db-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     environment:
       POSTGRES_DB: ${PG_DATABASE_NAME:?}
       POSTGRES_USER: ${PG_DATABASE_USER:?}
       POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD:?}
+      AGENT_DB_NAME: ${AGENT_DB_NAME:?}
+      AGENT_DB_USER: ${AGENT_DB_USER:?}
+      AGENT_DB_PASSWORD: ${AGENT_DB_PASSWORD:?}
     healthcheck:
       test: pg_isready -U ${PG_DATABASE_USER} -h localhost -d ${PG_DATABASE_NAME}
       interval: 5s
@@ -121,12 +125,15 @@ services:
       TELEGRAM_FOUNDER_CHAT_ID: ${TELEGRAM_FOUNDER_CHAT_ID:?}
       FIREWORKS_API_KEY: ${FIREWORKS_API_KEY:?}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
+      AGENT_DB_URL: postgres://${AGENT_DB_USER:?}:${AGENT_DB_PASSWORD:?}@db:5432/${AGENT_DB_NAME:?}
     healthcheck:
       test: wget -qO- http://localhost:3100/healthz || exit 1
       interval: 10s
       timeout: 5s
       retries: 10
     depends_on:
+      db:
+        condition: service_healthy
       server:
         condition: service_healthy
     networks: [web, private]

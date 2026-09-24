@@ -4875,6 +4875,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@cfworker/json-schema@npm:^4.0.2":
+  version: 4.1.1
+  resolution: "@cfworker/json-schema@npm:4.1.1"
+  checksum: 10c0/b5253486d346b7de6feec9c73954f612b11019dacb9023d710a5666df2f5fc145dd88b6b913c88726c6d97e2e258a515fa2cab177f58b18da6bac3738cbc4739
+  languageName: node
+  linkType: hard
+
 "@chakra-ui/react@npm:^3.33.0":
   version: 3.33.0
   resolution: "@chakra-ui/react@npm:3.33.0"
@@ -9810,6 +9817,85 @@ __metadata:
   version: 1.1.1
   resolution: "@kwsites/promise-deferred@npm:1.1.1"
   checksum: 10c0/ef1ad3f1f50991e3bed352b175986d8b4bc684521698514a2ed63c1d1fc9848843da4f2bc2df961c9b148c94e1c34bf33f0da8a90ba2234e452481f2cc9937b1
+  languageName: node
+  linkType: hard
+
+"@langchain/core@npm:1.2.11":
+  version: 1.2.11
+  resolution: "@langchain/core@npm:1.2.11"
+  dependencies:
+    "@cfworker/json-schema": "npm:^4.0.2"
+    "@standard-schema/spec": "npm:^1.1.0"
+    js-tiktoken: "npm:^1.0.12"
+    langsmith: "npm:>=0.5.0 <1.0.0"
+    mustache: "npm:^4.2.0"
+    p-queue: "npm:^6.6.2"
+    zod: "npm:^3.25.76 || ^4"
+  checksum: 10c0/a02af004c58db256fbd48ef948c97adaa5a58153db834fb2fe7db4943814d09a053bdeb038f1b2e79d36f9e79c5dbacfee60714686e0b7f86fb3da7851580585
+  languageName: node
+  linkType: hard
+
+"@langchain/langgraph-checkpoint-postgres@npm:1.0.5":
+  version: 1.0.5
+  resolution: "@langchain/langgraph-checkpoint-postgres@npm:1.0.5"
+  dependencies:
+    pg: "npm:^8.12.0"
+  peerDependencies:
+    "@langchain/core": ^1.1.44
+    "@langchain/langgraph-checkpoint": ^1.1.4
+  checksum: 10c0/b68ff535d79ed1f4239185f09fe8c49b4a359b596101e6be08f2600d5fb16e1a7f15c9f7ec4f0f92d95dc319438b5f2871f749204c126b6dbc0795240f122f18
+  languageName: node
+  linkType: hard
+
+"@langchain/langgraph-checkpoint@npm:1.1.5, @langchain/langgraph-checkpoint@npm:^1.1.5":
+  version: 1.1.5
+  resolution: "@langchain/langgraph-checkpoint@npm:1.1.5"
+  peerDependencies:
+    "@langchain/core": ^1.1.48
+  checksum: 10c0/13df16723a8e5a75b5338b8b74421c8a0903eee8641f941408e8755badde7baa97ab009646ea90db2da30e2898bec13b21df92bd536463c1bdcaea78f8f93f03
+  languageName: node
+  linkType: hard
+
+"@langchain/langgraph-sdk@npm:~1.11.1":
+  version: 1.11.1
+  resolution: "@langchain/langgraph-sdk@npm:1.11.1"
+  dependencies:
+    "@langchain/protocol": "npm:^0.0.19"
+    "@types/json-schema": "npm:^7.0.15"
+    p-queue: "npm:^9.0.1"
+    p-retry: "npm:^7.1.1"
+  peerDependencies:
+    "@langchain/core": ^1.1.48
+    react: ^18 || ^19
+    react-dom: ^18 || ^19
+  peerDependenciesMeta:
+    react:
+      optional: true
+    react-dom:
+      optional: true
+  checksum: 10c0/fc40445870b376882905ff302ba42fffbc742cd9260e9a9a2e14f90a575e7f1b18ff8ad4317f7b583924c14ab773bf6aea84437754b7d3449917747087630fd8
+  languageName: node
+  linkType: hard
+
+"@langchain/langgraph@npm:1.4.16":
+  version: 1.4.16
+  resolution: "@langchain/langgraph@npm:1.4.16"
+  dependencies:
+    "@langchain/langgraph-checkpoint": "npm:^1.1.5"
+    "@langchain/langgraph-sdk": "npm:~1.11.1"
+    "@langchain/protocol": "npm:^0.0.19"
+    "@standard-schema/spec": "npm:1.1.0"
+  peerDependencies:
+    "@langchain/core": ^1.1.48
+    zod: ^3.25.32 || ^4.2.0
+  checksum: 10c0/5e0135406234d0db9bfc2bc46553a726b7364432662b73d74fe9d7b4ff419c4026897b899f147ccfdef073d968a0e77719ded2d760e14915187607461946d970
+  languageName: node
+  linkType: hard
+
+"@langchain/protocol@npm:^0.0.19":
+  version: 0.0.19
+  resolution: "@langchain/protocol@npm:0.0.19"
+  checksum: 10c0/f83e973a59fae9c899325b4e611432b7662501a2eb24ba1e820e79be6f25c4d34af5781348ffad73354797c8ff628e00614131a8c2a531c4e31deb4bc13880ba
   languageName: node
   linkType: hard
 
@@ -18499,7 +18585,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@standard-schema/spec@npm:^1.0.0, @standard-schema/spec@npm:^1.1.0":
+"@standard-schema/spec@npm:1.1.0, @standard-schema/spec@npm:^1.0.0, @standard-schema/spec@npm:^1.1.0":
   version: 1.1.0
   resolution: "@standard-schema/spec@npm:1.1.0"
   checksum: 10c0/d90f55acde4b2deb983529c87e8025fa693de1a5e8b49ecc6eb84d1fd96328add0e03d7d551442156c7432fd78165b2c26ff561b970a9a881f046abb78d6a526
@@ -24677,6 +24763,10 @@ __metadata:
   dependencies:
     "@ai-sdk/fireworks": "npm:3.0.55"
     "@ai-sdk/openai": "npm:4.0.69"
+    "@langchain/core": "npm:1.2.11"
+    "@langchain/langgraph": "npm:1.4.16"
+    "@langchain/langgraph-checkpoint": "npm:1.1.5"
+    "@langchain/langgraph-checkpoint-postgres": "npm:1.0.5"
     "@nestjs/cli": "npm:^11.0.16"
     "@nestjs/common": "npm:11.2.1"
     "@nestjs/config": "npm:^4.0.4"
@@ -30847,7 +30937,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"eventemitter3@npm:^4.0.0":
+"eventemitter3@npm:^4.0.0, eventemitter3@npm:^4.0.4":
   version: 4.0.7
   resolution: "eventemitter3@npm:4.0.7"
   checksum: 10c0/5f6d97cbcbac47be798e6355e3a7639a84ee1f7d9b199a07017f1d2f1e2fe236004d14fa5dfaeba661f94ea57805385e326236a6debbc7145c8877fbc0297c6b
@@ -35249,7 +35339,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"is-network-error@npm:^1.3.0":
+"is-network-error@npm:^1.1.0, is-network-error@npm:^1.3.0":
   version: 1.3.2
   resolution: "is-network-error@npm:1.3.2"
   checksum: 10c0/37edc576497b21d022754b49203358ee80fdac4a11a71a09687f38ad789ec437dd930c223301df39f1c920566692b31345e0108ae720996e592cab3879eca74f
@@ -36880,6 +36970,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"js-tiktoken@npm:^1.0.12":
+  version: 1.0.21
+  resolution: "js-tiktoken@npm:1.0.21"
+  dependencies:
+    base64-js: "npm:^1.5.1"
+  checksum: 10c0/49a0b1e8915d271b84b5c2217fcab37de3124cfbba7e9901d3d9afb1acdd931f0ff7025ed94587dd1b59ae5c04cc19949c2869823854ee7f2f3f81678db276f3
+  languageName: node
+  linkType: hard
+
 "js-tokens@npm:^3.0.0 || ^4.0.0, js-tokens@npm:^4.0.0":
   version: 4.0.0
   resolution: "js-tokens@npm:4.0.0"
@@ -37481,6 +37580,32 @@ __metadata:
   version: 1.14.3
   resolution: "ky@npm:1.14.3"
   checksum: 10c0/8e91c9512c8f1501201108ad58ed437eaf3f5b0a0da842bd846d785932426e84a31cf51d0fffce1921d4e70e26465a9b2b89ed2477822975568258a1fa68a740
+  languageName: node
+  linkType: hard
+
+"langsmith@npm:>=0.5.0 <1.0.0":
+  version: 0.10.4
+  resolution: "langsmith@npm:0.10.4"
+  dependencies:
+    p-queue: "npm:6.6.2"
+  peerDependencies:
+    "@opentelemetry/api": "*"
+    "@opentelemetry/exporter-trace-otlp-proto": "*"
+    "@opentelemetry/sdk-trace-base": "*"
+    openai: "*"
+    ws: ">=7"
+  peerDependenciesMeta:
+    "@opentelemetry/api":
+      optional: true
+    "@opentelemetry/exporter-trace-otlp-proto":
+      optional: true
+    "@opentelemetry/sdk-trace-base":
+      optional: true
+    openai:
+      optional: true
+    ws:
+      optional: true
+  checksum: 10c0/e2ac0551459731dd1849fdfc8df7aff852d8649ac4a6814297840119e9ae2d7799223400424f4fc1631d2632959358e7f054a496e0ebba8032c63caffbc63657
   languageName: node
   linkType: hard
 
@@ -42010,6 +42135,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"p-finally@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "p-finally@npm:1.0.0"
+  checksum: 10c0/6b8552339a71fe7bd424d01d8451eea92d379a711fc62f6b2fe64cad8a472c7259a236c9a22b4733abca0b5666ad503cb497792a0478c5af31ded793d00937e7
+  languageName: node
+  linkType: hard
+
 "p-limit@npm:3.1.0, p-limit@npm:^3.0.2, p-limit@npm:^3.1.0":
   version: 3.1.0
   resolution: "p-limit@npm:3.1.0"
@@ -42080,6 +42212,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"p-queue@npm:6.6.2, p-queue@npm:^6.6.2":
+  version: 6.6.2
+  resolution: "p-queue@npm:6.6.2"
+  dependencies:
+    eventemitter3: "npm:^4.0.4"
+    p-timeout: "npm:^3.2.0"
+  checksum: 10c0/5739ecf5806bbeadf8e463793d5e3004d08bb3f6177bd1a44a005da8fd81bb90f80e4633e1fb6f1dfd35ee663a5c0229abe26aebb36f547ad5a858347c7b0d3e
+  languageName: node
+  linkType: hard
+
 "p-queue@npm:^8.0.1":
   version: 8.1.1
   resolution: "p-queue@npm:8.1.1"
@@ -42090,6 +42232,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"p-queue@npm:^9.0.1":
+  version: 9.3.3
+  resolution: "p-queue@npm:9.3.3"
+  dependencies:
+    eventemitter3: "npm:^5.0.4"
+    p-timeout: "npm:^7.0.0"
+  checksum: 10c0/0d88a35cb3301bee2aac654c0a7018a2e40775fa597f3a06da66f33b0311d106bebbe9732c8e5968ae1e0e0b49f79c874333d2a7b0a57fad469189f236c066d7
+  languageName: node
+  linkType: hard
+
 "p-queue@npm:^9.1.0":
   version: 9.3.0
   resolution: "p-queue@npm:9.3.0"
@@ -42097,6 +42249,15 @@ __metadata:
     eventemitter3: "npm:^5.0.4"
     p-timeout: "npm:^7.0.0"
   checksum: 10c0/4bc5461a022903127043eab72f3aa544ba740f74ad24cbc7207e1146b1c3d6b816f59e9eccd543dacd57e9534576b36a1904294c7502633291887ccd285ea945
+  languageName: node
+  linkType: hard
+
+"p-retry@npm:^7.1.1":
+  version: 7.1.1
+  resolution: "p-retry@npm:7.1.1"
+  dependencies:
+    is-network-error: "npm:^1.1.0"
+  checksum: 10c0/d72fb15dace25b8bf72c97a13c8a630ad1deb4667e708955e8806ee38f1d70e9611598ebe57bd9677349256e024a5599292f99aabb203143e0e13f1735e30818
   languageName: node
   linkType: hard
 
@@ -42116,6 +42277,15 @@ __metadata:
     aggregate-error: "npm:^4.0.0"
     p-cancelable: "npm:^3.0.0"
   checksum: 10c0/cb91501ebd651a9150487173f8330f6065849aa6a0f5dd2e77d458aa0194f3b14059092a7f5b9b8e4e3eb85e0f39b78bcac01b9e3405801d4643fbad94fa9cab
+  languageName: node
+  linkType: hard
+
+"p-timeout@npm:^3.2.0":
+  version: 3.2.0
+  resolution: "p-timeout@npm:3.2.0"
+  dependencies:
+    p-finally: "npm:^1.0.0"
+  checksum: 10c0/524b393711a6ba8e1d48137c5924749f29c93d70b671e6db761afa784726572ca06149c715632da8f70c090073afb2af1c05730303f915604fd38ee207b70a61
   languageName: node
   linkType: hard
 
@@ -42781,6 +42951,20 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pg-cloudflare@npm:^1.4.0":
+  version: 1.4.0
+  resolution: "pg-cloudflare@npm:1.4.0"
+  checksum: 10c0/553764d00055052648393cda53c1feb065991d6f9fbfdeb56cf8396c5b33377ab2897aaf5dc9cd3933d09023a1f01e8b1ca755431dcf5fd71c92ea277e2888f1
+  languageName: node
+  linkType: hard
+
+"pg-connection-string@npm:^2.14.0":
+  version: 2.14.0
+  resolution: "pg-connection-string@npm:2.14.0"
+  checksum: 10c0/c26d85970f782de72b90aa45b4acfa34df90242fc08bc676e8827297164044dbfb40a2cf20b0646bd02662a6b14c5ed27f322db627e41e582f2b705bc41e8b47
+  languageName: node
+  linkType: hard
+
 "pg-connection-string@npm:^2.6.4":
   version: 2.6.4
   resolution: "pg-connection-string@npm:2.6.4"
@@ -42792,6 +42976,15 @@ __metadata:
   version: 1.0.1
   resolution: "pg-int8@npm:1.0.1"
   checksum: 10c0/be6a02d851fc2a4ae3e9de81710d861de3ba35ac927268973eb3cb618873a05b9424656df464dd43bd7dc3fc5295c3f5b3c8349494f87c7af50ec59ef14e0b98
+  languageName: node
+  linkType: hard
+
+"pg-pool@npm:^3.14.0":
+  version: 3.14.0
+  resolution: "pg-pool@npm:3.14.0"
+  peerDependencies:
+    pg: ">=8.0"
+  checksum: 10c0/3dd706e67e3b317e29409d9eb3bd44e960eabd86db2a9711a9391bbd43881f8ce7a5f7054a341509558ee05e9bf0a3cc7aef037039da0790ce1e16762ade3ba6
   languageName: node
   linkType: hard
 
@@ -42811,6 +43004,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pg-protocol@npm:^1.16.0":
+  version: 1.16.0
+  resolution: "pg-protocol@npm:1.16.0"
+  checksum: 10c0/8ea4a8f4970aa0ca1e5bf9a482da0a41a043d7470fbaf7592736971146b09a2a4003d953c0091b72fc30bf7a7994a0b7fdf897bf50cd219787bd22806b3ffb04
+  languageName: node
+  linkType: hard
+
 "pg-protocol@npm:^1.6.1":
   version: 1.7.0
   resolution: "pg-protocol@npm:1.7.0"
@@ -42818,7 +43018,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"pg-types@npm:^2.1.0, pg-types@npm:^2.2.0":
+"pg-types@npm:2.2.0, pg-types@npm:^2.1.0, pg-types@npm:^2.2.0":
   version: 2.2.0
   resolution: "pg-types@npm:2.2.0"
   dependencies:
@@ -42853,7 +43053,29 @@ __metadata:
   languageName: node
   linkType: hard
 
-"pgpass@npm:1.x":
+"pg@npm:^8.12.0":
+  version: 8.23.0
+  resolution: "pg@npm:8.23.0"
+  dependencies:
+    pg-cloudflare: "npm:^1.4.0"
+    pg-connection-string: "npm:^2.14.0"
+    pg-pool: "npm:^3.14.0"
+    pg-protocol: "npm:^1.16.0"
+    pg-types: "npm:2.2.0"
+    pgpass: "npm:1.0.5"
+  peerDependencies:
+    pg-native: ">=3.0.1"
+  dependenciesMeta:
+    pg-cloudflare:
+      optional: true
+  peerDependenciesMeta:
+    pg-native:
+      optional: true
+  checksum: 10c0/11ce12a71b4239588c18f078531c378d5bcdbcb9ea892e080a6e71f91aaece2b4b8fd93ee5777f94210f9258ff56161f8ed1a45050c32d295aaca037bba12ee8
+  languageName: node
+  linkType: hard
+
+"pgpass@npm:1.0.5, pgpass@npm:1.x":
   version: 1.0.5
   resolution: "pgpass@npm:1.0.5"
   dependencies:
@@ -54062,6 +54284,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"zod@npm:^3.25.76 || ^4, zod@npm:^4.6.5":
+  version: 4.6.5
+  resolution: "zod@npm:4.6.5"
+  checksum: 10c0/32eb6c5e98becbe045675b2141c3611451c16ba567f9779231d79af41c4d651ca1c22f154aef7e6c6e77b929f23e43f1154ca05b82e119e922353725d6776af5
+  languageName: node
+  linkType: hard
+
 "zod@npm:^4.1.0":
   version: 4.6.2
   resolution: "zod@npm:4.6.2"
@@ -54087,13 +54316,6 @@ __metadata:
   version: 4.5.4
   resolution: "zod@npm:4.5.4"
   checksum: 10c0/511a2a4d1a6f875dfdd70a1586989a8b14ef126776cd6218a2c760b9f65f14ef389ec20d92ee1aa4fcb4566d4ff3fa012956044f9dc503510d82e4c756a8ba92
-  languageName: node
-  linkType: hard
-
-"zod@npm:^4.6.5":
-  version: 4.6.5
-  resolution: "zod@npm:4.6.5"
-  checksum: 10c0/32eb6c5e98becbe045675b2141c3611451c16ba567f9779231d79af41c4d651ca1c22f154aef7e6c6e77b929f23e43f1154ca05b82e119e922353725d6776af5
   languageName: node
   linkType: hard
 
