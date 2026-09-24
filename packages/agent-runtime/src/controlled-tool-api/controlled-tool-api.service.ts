@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { traceTool } from '@arizeai/openinference-core';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 
 import { stableStringify } from '../shared/stable-stringify';
 import {
@@ -23,13 +24,53 @@ type TrackedAction = {
 // restart-safe store once the agent database exists.
 const MAX_TRACKED_ACTIONS = 10_000;
 
+// Exercises the real path (this service -> Twenty's GraphQL API) once at
+// boot so there's always a real trace to find in Phoenix, the same role
+// AgentGraphService.runDemo plays for the persistence layer.
+const DEMO_IDENTITY: AgentIdentity = {
+  agentId: 'controlled-tool-api-demo',
+  scopes: ['person:read'],
+};
+const DEMO_ACTION_ID = 'controlled-tool-api-demo';
+
 @Injectable()
-export class ControlledToolApiService {
+export class ControlledToolApiService implements OnModuleInit {
+  private readonly logger = new Logger(ControlledToolApiService.name);
   private readonly trackedActions = new Map<string, TrackedAction>();
+  readonly callTool: (
+    identity: AgentIdentity,
+    toolName: string,
+    payload: unknown,
+    actionId: string,
+  ) => Promise<unknown>;
 
-  constructor(private readonly twenty: TwentyGraphqlClientService) {}
+  constructor(private readonly twenty: TwentyGraphqlClientService) {
+    this.callTool = traceTool(this.callToolImpl.bind(this), { name: 'callTool' });
+  }
 
-  async callTool(
+  onModuleInit(): void {
+    void this.runDemo();
+  }
+
+  private async runDemo(): Promise<void> {
+    try {
+      const result = await this.callTool(
+        DEMO_IDENTITY,
+        'lookup-person-by-email',
+        { email: 'demo-trace@jai-os.internal' },
+        DEMO_ACTION_ID,
+      );
+
+      this.logger.log(`Controlled Tool API demo call succeeded: ${JSON.stringify(result)}`);
+    } catch (error) {
+      this.logger.error(
+        'Controlled Tool API demo call failed',
+        error instanceof Error ? error.stack : error,
+      );
+    }
+  }
+
+  private async callToolImpl(
     identity: AgentIdentity,
     toolName: string,
     payload: unknown,

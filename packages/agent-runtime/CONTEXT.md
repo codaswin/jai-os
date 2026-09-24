@@ -21,6 +21,9 @@ _Avoid_: fail-open, best-effort scanning.
 **Agent graph demo**:
 `AgentGraphService.runDemo` — an increment-and-persist counter proving the LangGraph Postgres checkpointer survives a process restart. It is not an agent and has no business logic. Don't extend it in place; a real graph replaces it, it doesn't grow out of it.
 
+**Tracing**:
+Every `LlmService.generate()` call and every `ControlledToolApiService.callTool` call are traces in one Arize Phoenix project — `generate()` automatically via `registerTelemetry` (`src/tracing/tracing.ts`), tool calls via `traceTool` wrapping `callTool`. Best-effort: a tracing-setup failure is logged, never fatal, and `agent-runtime` does not depend on `phoenix` being up to start. Full rationale in `docs/adr/0002-arize-phoenix-tracing.md`, including why loading `@ai-sdk/otel`/`@arizeai/openinference-vercel` needs the `importEsm` indirection in that file rather than a normal import.
+
 ## Not yet true
 
-Per `jai-os-docs/08-build-phases.md` Phase 2, still missing from this package: Arize Phoenix tracing, the BullMQ agent inbox with dedicated Redis, and approval records in isolated storage. `LlmService`, `TelegramBotService`, `ControlledToolApiService`, and `AgentGraphService` each pass their own tests but do not call each other yet.
+Per `jai-os-docs/08-build-phases.md` Phase 2, still missing from this package: the BullMQ agent inbox with dedicated Redis, and approval records in isolated storage (tickets #21/#22 — see `docs/adr/0002-arize-phoenix-tracing.md` for the current handoff). `LlmService`, `TelegramBotService`, `ControlledToolApiService`, and `AgentGraphService` each pass their own tests but do not call each other yet.
