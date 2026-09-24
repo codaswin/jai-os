@@ -4,7 +4,7 @@ Runs our own build of Twenty: upstream release plus a small patch (see `docs/adr
 
 ## Layout
 
-- `docker-compose.yml`: caddy, server, worker, db, redis, agent-runtime. Only caddy publishes ports. db, redis and agent-runtime sit on an internal network with no route out.
+- `docker-compose.yml`: caddy, server, worker, db, redis, agent-runtime. Only caddy publishes ports. db and redis sit on an internal network with no route out; agent-runtime also has outbound-only internet access (no published port, no Caddy route) for the Telegram bot's long polling.
 - `Caddyfile`: automatic TLS for `$DOMAIN`.
 - `scripts/`: `init-env.sh`, `backup.sh`, `restore-test.sh`, `healthcheck.sh`.
 - Not in git: `.env` (secrets), `secrets/` (restic password, SSH key), `backups/`, `logs/`.
@@ -23,9 +23,11 @@ Store a copy of `secrets/restic-password` and `.env` somewhere other than this V
 
 ## agent-runtime
 
-The service the agent-plumbing work (Phase 2, `jai-os-docs/08-build-phases.md`) lands in — the Controlled Tool API and everything built on top of it. Builds locally from `packages/agent-runtime` (`docker compose build agent-runtime`); it's a lean NestJS backend, not Twenty's front end, so it doesn't need the ~8GB heap the Twenty image build does. Sits on the internal `private` network only, no public route.
+The service the agent-plumbing work (Phase 2, `jai-os-docs/08-build-phases.md`) lands in — the Controlled Tool API and everything built on top of it. Builds locally from `packages/agent-runtime` (`docker compose build agent-runtime`); it's a lean NestJS backend, not Twenty's front end, so it doesn't need the ~8GB heap the Twenty image build does. No published port and no Caddy route — it's reached only by other containers on the `private` network, and reaches out to the internet (Telegram) via the `web` network.
 
 It needs its own Twenty API key, generated after the first admin exists: Settings → APIs → generate a key, then add `AGENT_RUNTIME_TWENTY_API_KEY=<key>` to `.env`. `docker compose up` fails fast with a clear error if that variable is missing.
+
+It also needs a Telegram bot, hardcoded to the founder's chat: message [@BotFather](https://t.me/BotFather) to create a bot and get a token, add `TELEGRAM_BOT_TOKEN=<token>` to `.env`; then message the bot once from the founder's account and call `https://api.telegram.org/bot<token>/getUpdates` to read `message.chat.id` out of the response, and add that as `TELEGRAM_FOUNDER_CHAT_ID=<id>` to `.env`. The bot ignores messages from any other chat.
 
 ## Backups
 
