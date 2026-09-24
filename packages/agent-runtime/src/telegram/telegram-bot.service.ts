@@ -30,6 +30,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   private readonly shutdownController = new AbortController();
   private offset = 0;
   private polling = false;
+  private pollingPromise: Promise<void> = Promise.resolve();
 
   constructor(private readonly configService: ConfigService) {
     const botToken = this.configService.getOrThrow<string>('TELEGRAM_BOT_TOKEN');
@@ -40,12 +41,16 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     this.polling = true;
-    void this.pollForUpdates();
+    this.pollingPromise = this.pollForUpdates();
   }
 
-  onModuleDestroy(): void {
+  // Waits for the poll loop to actually exit before Nest proceeds with
+  // shutdown, so its abort-triggered catch block never runs against a
+  // partially torn-down module.
+  async onModuleDestroy(): Promise<void> {
     this.polling = false;
     this.shutdownController.abort();
+    await this.pollingPromise;
   }
 
   async sendAlert(text: string): Promise<void> {

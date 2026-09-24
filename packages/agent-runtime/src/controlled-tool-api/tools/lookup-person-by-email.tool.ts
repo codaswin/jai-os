@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import { type ToolDefinition } from '../types';
 
 export type LookupPersonByEmailPayload = {
@@ -48,6 +50,7 @@ export const lookupPersonByEmailTool: ToolDefinition<
 > = {
   name: 'lookup-person-by-email',
   requiredScope: 'person:read',
+  payloadSchema: z.object({ email: z.string().email() }),
   execute: async (payload, twenty) => {
     const result = await twenty.request<LookupPersonByEmailQueryResult>(
       QUERY,

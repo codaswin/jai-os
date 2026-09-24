@@ -1,7 +1,12 @@
 import { Test } from '@nestjs/testing';
 
 import { ControlledToolApiService } from './controlled-tool-api.service';
-import { ActionIdReusedError, PermissionScopeError, UnknownToolError } from './errors';
+import {
+  ActionIdReusedError,
+  InvalidPayloadError,
+  PermissionScopeError,
+  UnknownToolError,
+} from './errors';
 import { TwentyGraphqlClientService } from './twenty-graphql-client.service';
 import { type AgentIdentity } from './types';
 
@@ -85,6 +90,19 @@ describe('ControlledToolApiService', () => {
       primaryEmail: 'jane@example.com',
     });
     expect(twentyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a payload that fails the tool schema, before calling Twenty', async () => {
+    await expect(
+      service.callTool(
+        readScopedIdentity,
+        'lookup-person-by-email',
+        { email: 'not-an-email' },
+        'action-invalid',
+      ),
+    ).rejects.toThrow(InvalidPayloadError);
+
+    expect(twentyRequest).not.toHaveBeenCalled();
   });
 
   it('executes the same action ID once, returning the cached result on repeat', async () => {
