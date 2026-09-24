@@ -23,11 +23,13 @@ Store a copy of `secrets/restic-password` and `.env` somewhere other than this V
 
 ## agent-runtime
 
-The service the agent-plumbing work (Phase 2, `jai-os-docs/08-build-phases.md`) lands in — the Controlled Tool API and everything built on top of it. Builds locally from `packages/agent-runtime` (`docker compose build agent-runtime`); it's a lean NestJS backend, not Twenty's front end, so it doesn't need the ~8GB heap the Twenty image build does. No published port and no Caddy route — it's reached only by other containers on the `private` network, and reaches out to the internet (Telegram) via the `web` network.
+The service the agent-plumbing work (Phase 2, `jai-os-docs/08-build-phases.md`) lands in — the Controlled Tool API and everything built on top of it. Builds locally from `packages/agent-runtime` (`docker compose build agent-runtime`); it's a lean NestJS backend, not Twenty's front end, so it doesn't need the ~8GB heap the Twenty image build does. No published port and no Caddy route — it's reached only by other containers on the `private` network, and reaches out to the internet (Telegram, Fireworks, OpenAI) via the `web` network.
 
 It needs its own Twenty API key, generated after the first admin exists: Settings → APIs → generate a key, then add `AGENT_RUNTIME_TWENTY_API_KEY=<key>` to `.env`. `docker compose up` fails fast with a clear error if that variable is missing.
 
 It also needs a Telegram bot, hardcoded to the founder's chat: message [@BotFather](https://t.me/BotFather) to create a bot and get a token, add `TELEGRAM_BOT_TOKEN=<token>` to `.env`; then message the bot once from the founder's account and call `https://api.telegram.org/bot<token>/getUpdates` to read `message.chat.id` out of the response, and add that as `TELEGRAM_FOUNDER_CHAT_ID=<id>` to `.env`. The bot ignores messages from any other chat.
+
+And LLM provider keys: a Fireworks API key (`FIREWORKS_API_KEY`, from fireworks.ai) for the primary model, and an OpenAI API key (`OPENAI_API_KEY`, from platform.openai.com) for automatic fallback when Fireworks errors or times out. Both model IDs are pinned in `src/llm/llm.service.ts` — reconfirm them against each provider's live catalog before bumping, since names and pricing tiers change without notice.
 
 ## Backups
 
