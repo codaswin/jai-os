@@ -133,6 +133,35 @@ services:
     cpus: 1
     logging: *logging
 
+  phoenix:
+    image: arizephoenix/phoenix:version-20.16.0
+    restart: always
+    volumes:
+      - phoenix-data:/mnt/data
+    environment:
+      PHOENIX_WORKING_DIR: /mnt/data
+    healthcheck:
+      # No shell in this image at all (not even /bin/sh), so the plain string
+      # form of `test` — which Compose runs via `sh -c` — can't work; exec form
+      # runs python3 directly. No curl/wget either, same gap as llm-guard.
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:6006/healthz').status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Internal network only — no Caddy route, no outbound internet needed.
+    # Reach the dashboard via an SSH tunnel: ssh -L 6006:localhost:6006 <vps>,
+    # then http://localhost:6006 on your own machine.
+    networks: [private]
+    mem_limit: 1g
+    cpus: 1
+    logging: *logging
+
   agent-runtime:
     build:
       context: ..
@@ -149,6 +178,7 @@ services:
       AGENT_DB_URL: postgres://${AGENT_DB_USER:?}:${AGENT_DB_PASSWORD:?}@db:5432/${AGENT_DB_NAME:?}
       LLM_GUARD_API_URL: http://llm-guard:8000
       LLM_GUARD_AUTH_TOKEN: ${LLM_GUARD_AUTH_TOKEN:?}
+      PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006/v1/traces
     healthcheck:
       test: wget -qO- http://localhost:3100/healthz || exit 1
       interval: 10s
@@ -161,6 +191,10 @@ services:
         condition: service_healthy
       llm-guard:
         condition: service_healthy
+      # No dependency on phoenix: tracing is best-effort observability, not a
+      # functional requirement — the OTLP exporter connects lazily on first
+      # flush, so agent-runtime starting before Phoenix is healthy just means
+      # early traces retry until it is, not a startup failure.
     networks: [web, private]
     mem_limit: 256m
     cpus: 0.5
@@ -177,3 +211,4 @@ volumes:
   caddy-data:
   caddy-config:
   llm-guard-models:
+  phoenix-data:
