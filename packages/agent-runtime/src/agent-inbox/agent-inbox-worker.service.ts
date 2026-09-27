@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { AGENT_INBOX_QUEUE_NAME } from './agent-inbox-queue.provider';
 import { DEMO_JOB_NAME } from './agent-inbox.constants';
 import { AgentInboxRepository } from './agent-inbox.repository';
+import { getJobHandler } from './job-handler-registry';
 
 // Fails on its very first attempt and succeeds after — proves the bounded-
 // retry-with-backoff acceptance criterion against something real rather than
@@ -20,13 +21,18 @@ export function processDemoJob(attemptsMade: number): { echoed: boolean } {
   return { echoed: true };
 }
 
-export function runJob(job: Job): unknown {
-  switch (job.name) {
-    case DEMO_JOB_NAME:
-      return processDemoJob(job.attemptsMade);
-    default:
-      throw new Error(`No handler registered for job "${job.name}"`);
+export async function runJob(job: Job): Promise<unknown> {
+  if (job.name === DEMO_JOB_NAME) {
+    return processDemoJob(job.attemptsMade);
   }
+
+  const handler = getJobHandler(job.name);
+
+  if (!handler) {
+    throw new Error(`No handler registered for job "${job.name}"`);
+  }
+
+  return handler(job);
 }
 
 // BullMQ emits its own 'completed'/'failed' Worker events on every attempt,

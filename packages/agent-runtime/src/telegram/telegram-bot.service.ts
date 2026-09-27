@@ -9,11 +9,19 @@ type TelegramUpdate = {
     chat: { id: number };
     text?: string;
   };
+  callback_query?: {
+    id: string;
+    data?: string;
+    from: { id: number };
+  };
 };
 
 type TelegramGetUpdatesResponse = {
   result: TelegramUpdate[];
 };
+
+export type ApprovalDecision = 'approved' | 'rejected';
+export type ApprovalCallbackHandler = (actionId: string, decision: ApprovalDecision) => Promise<void>;
 
 const POLL_TIMEOUT_SECONDS = 30;
 // Longer than the server-side long-poll window above, so a hung connection
@@ -31,6 +39,14 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   private offset = 0;
   private polling = false;
   private pollingPromise: Promise<void> = Promise.resolve();
+  // Callback-query handling is fire-and-forget from the poll loop's own
+  // perspective (see handleUpdate), but a founder's approve/reject tap must
+  // never be silently dropped by a shutdown that starts mid-processing —
+  // tracked here so onModuleDestroy can wait for every one of them to finish.
+  private readonly inFlightCallbacks = new Set<Promise<void>>();
+  // A single handler, not a list: exactly one consumer (ApprovalService) ever
+  // needs approve/reject button presses, and it registers once at boot.
+  private approvalCallbackHandler: ApprovalCallbackHandler | undefined;
 
   constructor(private readonly configService: ConfigService) {
     const botToken = this.configService.getOrThrow<string>('TELEGRAM_BOT_TOKEN');
@@ -51,17 +67,40 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     this.polling = false;
     this.shutdownController.abort();
     await this.pollingPromise;
+    await Promise.all(this.inFlightCallbacks);
   }
 
   async sendAlert(text: string): Promise<void> {
-    const response = await fetch(`${this.apiBaseUrl}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: this.founderChatId, text }),
-      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-    });
+    await this.postToTelegram(
+      'sendMessage',
+      { chat_id: this.founderChatId, text },
+      'Telegram sendMessage',
+    );
+  }
 
-    await throwOnFailedResponse(response, 'Telegram sendMessage');
+  async sendApprovalRequest(text: string, actionId: string): Promise<void> {
+    await this.postToTelegram(
+      'sendMessage',
+      {
+        chat_id: this.founderChatId,
+        text,
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: 'Approve', callback_data: `approve:${actionId}` },
+              { text: 'Reject', callback_data: `reject:${actionId}` },
+            ],
+          ],
+        },
+      },
+      'Telegram sendMessage (approval request)',
+    );
+  }
+
+  // Exactly one registration is expected, at module init — see the field
+  // comment above.
+  onApprovalCallback(handler: ApprovalCallbackHandler): void {
+    this.approvalCallbackHandler = handler;
   }
 
   private async pollForUpdates(): Promise<void> {
@@ -98,6 +137,27 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   }
 
   handleUpdate(update: TelegramUpdate): void {
+    if (update.callback_query) {
+      const callbackQuery = update.callback_query;
+      // Fire-and-forget from the poll loop's perspective, like sendAlert
+      // callers elsewhere in this app — a callback-handling failure must
+      // never stop the poll loop from processing the next update. Tracked in
+      // inFlightCallbacks (not just logged on failure) so onModuleDestroy can
+      // still wait for it.
+      const promise = this.processCallbackQuery(callbackQuery)
+        .catch((error) =>
+          this.logger.error(
+            'Failed to process an approval callback query',
+            error instanceof Error ? error.stack : error,
+          ),
+        )
+        .finally(() => this.inFlightCallbacks.delete(promise));
+
+      this.inFlightCallbacks.add(promise);
+
+      return;
+    }
+
     const chatId = update.message?.chat.id;
 
     if (chatId === undefined || String(chatId) !== this.founderChatId) {
@@ -111,7 +171,81 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Received message from founder chat: ${update.message?.text ?? ''}`);
   }
 
+  // Telegram expects every callback_query to be answered — otherwise the
+  // tapped button's loading spinner sits there until the client times it out
+  // — so this always calls answerCallbackQuery on the way out, including for
+  // a non-founder sender or unparseable data, not only on the happy path.
+  private async processCallbackQuery(
+    callbackQuery: NonNullable<TelegramUpdate['callback_query']>,
+  ): Promise<void> {
+    try {
+      if (String(callbackQuery.from.id) !== this.founderChatId) {
+        this.logger.debug(`Ignoring a callback query from non-founder chat ${callbackQuery.from.id}`);
+
+        return;
+      }
+
+      const parsed = parseApprovalCallbackData(callbackQuery.data);
+
+      if (!parsed) {
+        this.logger.warn(`Ignoring an unrecognized callback query: ${callbackQuery.data ?? ''}`);
+
+        return;
+      }
+
+      if (this.approvalCallbackHandler) {
+        await this.approvalCallbackHandler(parsed.actionId, parsed.decision);
+      }
+    } finally {
+      await this.answerCallbackQuery(callbackQuery.id);
+    }
+  }
+
+  private async answerCallbackQuery(callbackQueryId: string): Promise<void> {
+    await this.postToTelegram(
+      'answerCallbackQuery',
+      { callback_query_id: callbackQueryId },
+      'Telegram answerCallbackQuery',
+    );
+  }
+
+  private async postToTelegram(path: string, body: unknown, context: string): Promise<void> {
+    const response = await fetch(`${this.apiBaseUrl}/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+    });
+
+    await throwOnFailedResponse(response, context);
+  }
+
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+}
+
+export function parseApprovalCallbackData(
+  data: string | undefined,
+): { actionId: string; decision: ApprovalDecision } | null {
+  if (!data) {
+    return null;
+  }
+
+  const [prefix, ...rest] = data.split(':');
+  const actionId = rest.join(':');
+
+  if (!actionId) {
+    return null;
+  }
+
+  if (prefix === 'approve') {
+    return { actionId, decision: 'approved' };
+  }
+
+  if (prefix === 'reject') {
+    return { actionId, decision: 'rejected' };
+  }
+
+  return null;
 }

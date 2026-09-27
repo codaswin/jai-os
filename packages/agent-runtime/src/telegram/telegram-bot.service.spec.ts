@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
-import { TelegramBotService } from './telegram-bot.service';
+import { parseApprovalCallbackData, TelegramBotService } from './telegram-bot.service';
 
 describe('TelegramBotService', () => {
   let service: TelegramBotService;
@@ -108,5 +108,115 @@ describe('TelegramBotService', () => {
 
       expect(logSpy).not.toHaveBeenCalled();
     });
+
+    it('routes a callback query from the founder to the registered approval handler', async () => {
+      fetchMock.mockResolvedValue({ ok: true });
+
+      const handler = jest.fn().mockResolvedValue(undefined);
+
+      service.onApprovalCallback(handler);
+      service.handleUpdate({
+        update_id: 1,
+        callback_query: { id: 'cb-1', data: 'approve:action-1', from: { id: Number(founderChatId) } },
+      });
+
+      await flushMicrotasks();
+
+      expect(handler).toHaveBeenCalledWith('action-1', 'approved');
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/answerCallbackQuery'),
+        expect.objectContaining({ body: JSON.stringify({ callback_query_id: 'cb-1' }) }),
+      );
+    });
+
+    it('ignores a callback query from any other chat, but still answers it', async () => {
+      fetchMock.mockResolvedValue({ ok: true });
+
+      const handler = jest.fn().mockResolvedValue(undefined);
+
+      service.onApprovalCallback(handler);
+      service.handleUpdate({
+        update_id: 1,
+        callback_query: { id: 'cb-1', data: 'approve:action-1', from: { id: 999999999 } },
+      });
+
+      await flushMicrotasks();
+
+      expect(handler).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/answerCallbackQuery'),
+        expect.objectContaining({ body: JSON.stringify({ callback_query_id: 'cb-1' }) }),
+      );
+    });
+
+    it('answers a callback query even when its data is unrecognized', async () => {
+      fetchMock.mockResolvedValue({ ok: true });
+
+      service.handleUpdate({
+        update_id: 1,
+        callback_query: { id: 'cb-1', data: 'not-a-real-format', from: { id: Number(founderChatId) } },
+      });
+
+      await flushMicrotasks();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/answerCallbackQuery'),
+        expect.objectContaining({ body: JSON.stringify({ callback_query_id: 'cb-1' }) }),
+      );
+    });
+  });
+
+  describe('sendApprovalRequest', () => {
+    it('posts a message with Approve/Reject inline buttons carrying the action ID', async () => {
+      fetchMock.mockResolvedValue({ ok: true });
+
+      await service.sendApprovalRequest('Approve this?', 'action-1');
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/sendMessage'),
+        expect.objectContaining({
+          body: JSON.stringify({
+            chat_id: founderChatId,
+            text: 'Approve this?',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: 'Approve', callback_data: 'approve:action-1' },
+                  { text: 'Reject', callback_data: 'reject:action-1' },
+                ],
+              ],
+            },
+          }),
+        }),
+      );
+    });
   });
 });
+
+describe('parseApprovalCallbackData', () => {
+  it('parses an approve callback', () => {
+    expect(parseApprovalCallbackData('approve:action-1')).toEqual({
+      actionId: 'action-1',
+      decision: 'approved',
+    });
+  });
+
+  it('parses a reject callback', () => {
+    expect(parseApprovalCallbackData('reject:action-1')).toEqual({
+      actionId: 'action-1',
+      decision: 'rejected',
+    });
+  });
+
+  it('rejects an unrecognized prefix', () => {
+    expect(parseApprovalCallbackData('snooze:action-1')).toBeNull();
+  });
+
+  it('rejects undefined data', () => {
+    expect(parseApprovalCallbackData(undefined)).toBeNull();
+  });
+});
+
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
