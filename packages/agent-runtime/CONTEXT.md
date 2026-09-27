@@ -9,7 +9,11 @@ The only path an agent may use to read or write Twenty — implemented here as `
 _Avoid_: direct GraphQL/database access from agent code.
 
 **Action ID**:
-The idempotency key a caller passes to `ControlledToolApiService.callTool`. A repeated ID with the same tool and payload replays the original result instead of re-executing; a repeated ID with a different tool or payload is rejected. Currently tracked in-memory only (`MAX_TRACKED_ACTIONS`, an LRU-ish cap) — not restart-safe. Move this to the agent database once Phase 2's durable inbox work starts; don't treat the in-memory tracking as the permanent design.
+The idempotency key a caller passes to `ControlledToolApiService.callTool`. A repeated ID with the same tool and payload replays the original result instead of re-executing; a repeated ID with a different tool or payload is rejected. Still tracked in-memory only (`MAX_TRACKED_ACTIONS`, an LRU-ish cap) — not restart-safe. The durable agent inbox below solves this for queued jobs specifically, but `ControlledToolApiService.callTool` is a separate boundary that can be called directly, not only through the queue; consolidating the two dedup mechanisms is still open, don't treat the in-memory tracking here as the permanent design.
+
+**Durable agent inbox + BullMQ queue**:
+`AgentInboxService.submit(actionId, jobName, payload)` — the durable inbox: an `agent_inbox_events` row (in the agent database) is committed before the corresponding BullMQ job is enqueued, and is the actual duplicate-protection record, not BullMQ's own jobId reuse (which stops protecting once a completed job is removed from Redis — see `docs/adr/0002-durable-agent-inbox-and-bullmq-queue.md`). `AgentInboxWorkerService` processes jobs with bounded retries and exponential backoff; a job's terminal state (`completed`/`failed`) is written to that same row from the Worker's own `completed`/`failed` events, since only the Worker can tell a retry-pending failure from an exhausted one. `QueueHealthService` alerts via #16's Telegram bot when the oldest waiting or failed job's age crosses a threshold.
+_Avoid_: adding a second duplicate-protection mechanism on top of the inbox row — a new job type registers a case in `AgentInboxWorkerService.runJob` and submits through `AgentInboxService.submit`, it doesn't touch BullMQ's `Queue`/`Worker` directly.
 
 **Fail-closed** (LLM Guard):
 `LlmGuardService` treats any transport failure, timeout, or non-2xx response as equivalent to a positive detection, never as "unscanned, so allow." A caller must not add a fallback that lets content through when the guard is unreachable.
@@ -23,4 +27,4 @@ _Avoid_: fail-open, best-effort scanning.
 
 ## Not yet true
 
-Per `jai-os-docs/08-build-phases.md` Phase 2, still missing from this package: Arize Phoenix tracing, the BullMQ agent inbox with dedicated Redis, and approval records in isolated storage. `LlmService`, `TelegramBotService`, `ControlledToolApiService`, and `AgentGraphService` each pass their own tests but do not call each other yet.
+Per `jai-os-docs/08-build-phases.md` Phase 2, still missing from this package: Arize Phoenix tracing (ticket #19, open as PR #35) and approval records in isolated storage (ticket #22, blocked by the durable inbox above). `LlmService`, `TelegramBotService`, `ControlledToolApiService`, `AgentGraphService`, and `AgentInboxService` each pass their own tests but do not call each other yet — nothing yet submits a real event to the inbox except its own boot-time demo.

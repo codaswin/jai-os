@@ -112,6 +112,25 @@ services:
     mem_limit: 512m
     logging: *logging
 
+  agent-redis:
+    image: redis:7.4.11
+    restart: always
+    # Separate from Twenty's own `redis` above: BullMQ's queue state must
+    # survive a restart (persistence on), and never silently drop a job under
+    # memory pressure (eviction disabled) — Twenty's redis is a cache that can
+    # tolerate both, agent-runtime's queue can't.
+    command: ["--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - agent-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [private]
+    mem_limit: 512m
+    logging: *logging
+
   llm-guard:
     image: laiyer/llm-guard-api:0.3.16
     restart: always
@@ -147,6 +166,9 @@ services:
       FIREWORKS_API_KEY: ${FIREWORKS_API_KEY:?}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       AGENT_DB_URL: postgres://${AGENT_DB_USER:?}:${AGENT_DB_PASSWORD:?}@db:5432/${AGENT_DB_NAME:?}
+      AGENT_REDIS_URL: redis://agent-redis:6379
+      QUEUE_AGE_ALERT_THRESHOLD_MS: ${QUEUE_AGE_ALERT_THRESHOLD_MS:-300000}
+      FAILED_JOB_AGE_ALERT_THRESHOLD_MS: ${FAILED_JOB_AGE_ALERT_THRESHOLD_MS:-300000}
       LLM_GUARD_API_URL: http://llm-guard:8000
       LLM_GUARD_AUTH_TOKEN: ${LLM_GUARD_AUTH_TOKEN:?}
     healthcheck:
@@ -160,6 +182,8 @@ services:
       server:
         condition: service_healthy
       llm-guard:
+        condition: service_healthy
+      agent-redis:
         condition: service_healthy
     networks: [web, private]
     mem_limit: 256m
@@ -177,3 +201,4 @@ volumes:
   caddy-data:
   caddy-config:
   llm-guard-models:
+  agent-redis-data:
