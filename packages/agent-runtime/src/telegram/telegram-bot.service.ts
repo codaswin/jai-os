@@ -71,21 +71,17 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   }
 
   async sendAlert(text: string): Promise<void> {
-    const response = await fetch(`${this.apiBaseUrl}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: this.founderChatId, text }),
-      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-    });
-
-    await throwOnFailedResponse(response, 'Telegram sendMessage');
+    await this.postToTelegram(
+      'sendMessage',
+      { chat_id: this.founderChatId, text },
+      'Telegram sendMessage',
+    );
   }
 
   async sendApprovalRequest(text: string, actionId: string): Promise<void> {
-    const response = await fetch(`${this.apiBaseUrl}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await this.postToTelegram(
+      'sendMessage',
+      {
         chat_id: this.founderChatId,
         text,
         reply_markup: {
@@ -96,11 +92,9 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             ],
           ],
         },
-      }),
-      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-    });
-
-    await throwOnFailedResponse(response, 'Telegram sendMessage (approval request)');
+      },
+      'Telegram sendMessage (approval request)',
+    );
   }
 
   // Exactly one registration is expected, at module init — see the field
@@ -177,39 +171,53 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Received message from founder chat: ${update.message?.text ?? ''}`);
   }
 
+  // Telegram expects every callback_query to be answered — otherwise the
+  // tapped button's loading spinner sits there until the client times it out
+  // — so this always calls answerCallbackQuery on the way out, including for
+  // a non-founder sender or unparseable data, not only on the happy path.
   private async processCallbackQuery(
     callbackQuery: NonNullable<TelegramUpdate['callback_query']>,
   ): Promise<void> {
-    if (String(callbackQuery.from.id) !== this.founderChatId) {
-      this.logger.debug(`Ignoring a callback query from non-founder chat ${callbackQuery.from.id}`);
+    try {
+      if (String(callbackQuery.from.id) !== this.founderChatId) {
+        this.logger.debug(`Ignoring a callback query from non-founder chat ${callbackQuery.from.id}`);
 
-      return;
+        return;
+      }
+
+      const parsed = parseApprovalCallbackData(callbackQuery.data);
+
+      if (!parsed) {
+        this.logger.warn(`Ignoring an unrecognized callback query: ${callbackQuery.data ?? ''}`);
+
+        return;
+      }
+
+      if (this.approvalCallbackHandler) {
+        await this.approvalCallbackHandler(parsed.actionId, parsed.decision);
+      }
+    } finally {
+      await this.answerCallbackQuery(callbackQuery.id);
     }
-
-    const parsed = parseApprovalCallbackData(callbackQuery.data);
-
-    if (!parsed) {
-      this.logger.warn(`Ignoring an unrecognized callback query: ${callbackQuery.data ?? ''}`);
-
-      return;
-    }
-
-    if (this.approvalCallbackHandler) {
-      await this.approvalCallbackHandler(parsed.actionId, parsed.decision);
-    }
-
-    await this.answerCallbackQuery(callbackQuery.id);
   }
 
   private async answerCallbackQuery(callbackQueryId: string): Promise<void> {
-    const response = await fetch(`${this.apiBaseUrl}/answerCallbackQuery`, {
+    await this.postToTelegram(
+      'answerCallbackQuery',
+      { callback_query_id: callbackQueryId },
+      'Telegram answerCallbackQuery',
+    );
+  }
+
+  private async postToTelegram(path: string, body: unknown, context: string): Promise<void> {
+    const response = await fetch(`${this.apiBaseUrl}/${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ callback_query_id: callbackQueryId }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
 
-    await throwOnFailedResponse(response, 'Telegram answerCallbackQuery');
+    await throwOnFailedResponse(response, context);
   }
 
   private sleep(ms: number): Promise<void> {

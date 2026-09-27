@@ -129,7 +129,9 @@ describe('TelegramBotService', () => {
       );
     });
 
-    it('ignores a callback query from any other chat', async () => {
+    it('ignores a callback query from any other chat, but still answers it', async () => {
+      fetchMock.mockResolvedValue({ ok: true });
+
       const handler = jest.fn().mockResolvedValue(undefined);
 
       service.onApprovalCallback(handler);
@@ -141,6 +143,26 @@ describe('TelegramBotService', () => {
       await flushMicrotasks();
 
       expect(handler).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/answerCallbackQuery'),
+        expect.objectContaining({ body: JSON.stringify({ callback_query_id: 'cb-1' }) }),
+      );
+    });
+
+    it('answers a callback query even when its data is unrecognized', async () => {
+      fetchMock.mockResolvedValue({ ok: true });
+
+      service.handleUpdate({
+        update_id: 1,
+        callback_query: { id: 'cb-1', data: 'not-a-real-format', from: { id: Number(founderChatId) } },
+      });
+
+      await flushMicrotasks();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/answerCallbackQuery'),
+        expect.objectContaining({ body: JSON.stringify({ callback_query_id: 'cb-1' }) }),
+      );
     });
   });
 

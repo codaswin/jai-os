@@ -10,4 +10,4 @@ import { ApprovalService } from './approval.service';
   providers: [ApprovalRepository, ApprovalService],
   exports: [ApprovalService],
 })
-export class ApprovalsModule {}
+export class ApprovalModule {}

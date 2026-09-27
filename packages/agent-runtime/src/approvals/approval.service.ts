@@ -41,9 +41,15 @@ export class ApprovalService implements OnModuleInit, OnModuleDestroy {
     private readonly repository: ApprovalRepository,
     private readonly telegramBot: TelegramBotService,
     private readonly agentInbox: AgentInboxService,
-  ) {}
-
-  onModuleInit(): void {
+  ) {
+    // Registered here, not in onModuleInit: Nest constructs every provider in
+    // the app (across every module) before calling any lifecycle hook, but
+    // does NOT guarantee which module's onModuleInit runs first — and
+    // AgentInboxService's onModuleInit kicks off inbox recovery, which reads
+    // this registration via getJobOptions. Registering in onModuleInit would
+    // make correctness depend on module init ordering nothing here actually
+    // enforces; the constructor phase is the one boundary Nest does
+    // guarantee precedes every onModuleInit in the app.
     registerJobHandler(
       APPROVAL_GATED_JOB_NAME,
       (job) => this.executeApprovalGatedJob(job),
@@ -52,7 +58,9 @@ export class ApprovalService implements OnModuleInit, OnModuleDestroy {
         backoff: { type: 'fixed', delay: APPROVAL_POLL_INTERVAL_MS },
       },
     );
+  }
 
+  onModuleInit(): void {
     this.telegramBot.onApprovalCallback(async (actionId, decision) => {
       await this.decide(actionId, decision);
     });
@@ -88,13 +96,8 @@ export class ApprovalService implements OnModuleInit, OnModuleDestroy {
   // nothing durable backs — the founder tapping a stale button just finds no
   // pending approval to decide. If this action ID was already proposed, the
   // existing record is returned and no second Telegram message is sent.
-  async propose(
-    actionId: string,
-    description: string,
-    payload: unknown,
-    ttlMs = APPROVAL_TTL_MS,
-  ): Promise<ApprovalRecord> {
-    const expiresAt = new Date(Date.now() + ttlMs);
+  async propose(actionId: string, description: string, payload: unknown): Promise<ApprovalRecord> {
+    const expiresAt = new Date(Date.now() + APPROVAL_TTL_MS);
     const inserted = await this.repository.insertIfAbsent(actionId, description, payload, expiresAt);
 
     if (!inserted) {
