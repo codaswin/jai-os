@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Dumps Twenty's Postgres, then snapshots the dump, file storage and deploy config
-# into an encrypted restic repo. Keeps 7 daily + 4 weekly snapshots.
+# Dumps Twenty's Postgres and the agent database (ticket #20), then snapshots
+# both dumps, file storage and deploy config into a single encrypted restic
+# repo. One snapshot covers both databases at the same moment, so a restore
+# lands on one consistent recovery point, not two independently-timed ones.
+# Keeps 7 daily + 4 weekly snapshots.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -21,8 +24,14 @@ fi
 
 mkdir -p "$BACKUP_DIR/dumps"
 rm -f "$BACKUP_DIR"/dumps/*.dump
+timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 "${COMPOSE[@]}" exec -T db pg_dump -U "$PG_DATABASE_USER" -Fc "$PG_DATABASE_NAME" \
-  > "$BACKUP_DIR/dumps/twenty-$(date -u +%Y%m%dT%H%M%SZ).dump"
+  > "$BACKUP_DIR/dumps/twenty-$timestamp.dump"
+# Same db container, the agent's own role/database (ticket #20) — a separate
+# dump, not a second database in the same one, since AGENT_DB_USER has (and
+# should only ever have) grants on its own database, not Twenty's.
+"${COMPOSE[@]}" exec -T db pg_dump -U "$AGENT_DB_USER" -Fc "$AGENT_DB_NAME" \
+  > "$BACKUP_DIR/dumps/agent-$timestamp.dump"
 
 restic \
   -v "$BACKUP_DIR/dumps:/data/dumps:ro" \
