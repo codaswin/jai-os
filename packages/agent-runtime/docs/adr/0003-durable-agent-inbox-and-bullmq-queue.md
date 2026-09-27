@@ -24,7 +24,7 @@ Ticket #21. A dedicated Redis (`agent-redis`, separate from Twenty's own `redis`
 
 ## Handoff: what's next
 
-**Current state as of this ADR:** `main` has tickets #15–#18, #20, and now #21 (this ticket). Ticket #19 (Arize Phoenix tracing) is **PR #35** (`arize-phoenix-tracing` → `agent-persistence-db`), merged into `agent-persistence-db` but **not yet on `main`** — check `git log origin/main..origin/agent-persistence-db` before assuming tracing is present in a fresh `main` checkout.
+**Current state as of this ADR:** `main` has tickets #15–#21, including #19 (Arize Phoenix tracing, ADR `0002-arize-phoenix-tracing.md`) and this ticket (#21). Both landed via separate PRs merged close together, which is why this ADR is numbered `0003` rather than `0002` — that number was already taken by #19's ADR by the time this one merged; renumbered at merge time rather than reusing it, per this package's own ADR convention.
 
 **Next unblocked ticket: #22, "Approvals."** Blocked by this ticket (#21) and now unblocked. It builds directly on the durable inbox: a proposed action needs a record bound to its exact payload, the founder's identity, an expiry, and status, persisted the same way `agent_inbox_events` is — a plain table in the agent database, created idempotently at boot the same way `AgentInboxRepository.setup()` does it, not a new ORM. `#25`, the true end-to-end proof action, additionally needs #22 before it's unblocked. `#23` ("Infra alerts over Telegram," needs only #16) and `#24` ("Backups extended to the agent database," needs only #20) remain independently available if a different order is preferred, but neither unblocks anything else the way #22 does.
 
