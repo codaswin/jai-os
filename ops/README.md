@@ -45,7 +45,7 @@ Every `LlmService.generate()` call and every Controlled Tool API call is also a 
 
 ## Backups
 
-`scripts/backup.sh` dumps Postgres, then snapshots the dump, file storage and deploy config (minus secrets) into an encrypted restic repo in `backups/`. It keeps 7 daily and 4 weekly snapshots. A backup failure or a near-full backup disk also reaches Telegram immediately (not debounced like `healthcheck.sh`'s checks below — this runs once daily, not every 5 minutes, so there's no repeat-spam risk). Cron it daily:
+`scripts/backup.sh` dumps both Twenty's Postgres database and the agent database (ticket #20's `AGENT_DB_NAME`, on the same `db` container) with the same timestamp, then snapshots both dumps, file storage and deploy config into a single encrypted restic repo in `backups/` — one snapshot, so a restore always lands on one consistent recovery point covering both databases together, not two independently-timed ones. `.env` (holding `AGENT_DB_PASSWORD` and everything else agent-runtime needs to restart) is part of that same deploy-config snapshot; only the `secrets/` directory itself (the restic password, SSH deploy keys — secrets about the backup, not secrets the backup restores) and `backups/`/`logs/` are excluded. It keeps 7 daily and 4 weekly snapshots. A backup failure or a near-full backup disk also reaches Telegram immediately (not debounced like `healthcheck.sh`'s checks below — this runs once daily, not every 5 minutes, so there's no repeat-spam risk). Cron it daily:
 
 ```
 15 2 * * * /path/to/ops/scripts/backup.sh >> /path/to/ops/logs/backup.log 2>&1
@@ -63,9 +63,9 @@ Same-VPS storage is an accepted limitation: losing the VPS loses production and 
 
 ## Restore test
 
-Monthly and before major upgrades: `scripts/restore-test.sh`. It restores the latest snapshot into a throwaway Postgres container and checks the tables, storage and config are present. It does not touch the live stack.
+Monthly and before major upgrades: `scripts/restore-test.sh`. It restores the latest snapshot into a throwaway Postgres container and checks both Twenty's and the agent database's dumps restore with tables present, plus that storage and deploy config are there. It does not touch the live stack.
 
-To actually restore: stop the stack, restore the snapshot to a temp dir, `pg_restore` the dump into the db container, copy `data/storage` back into the `jai-os_server-local-data` volume, start the stack.
+To actually restore: stop the stack, restore the snapshot to a temp dir, `pg_restore` both the Twenty and agent dumps into the db container (into `PG_DATABASE_NAME` and `AGENT_DB_NAME` respectively — same server, separate databases, same as live), copy `data/storage` back into the `jai-os_server-local-data` volume, start the stack.
 
 ## Upgrades and rollback
 
