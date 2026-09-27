@@ -4,6 +4,14 @@
 # push one Telegram message when a check starts failing and one when it
 # recovers, not a message every 5 minutes for as long as it stays broken.
 source "$(dirname "$0")/lib.sh"
+
+# A run that hangs (docker compose ps stalling on a wedged daemon is exactly
+# the kind of problem this script exists to catch) must not let a second,
+# overlapping cron invocation race it on alert-state's read-then-write —
+# skip the overlapping run rather than risk a duplicate or dropped alert.
+exec 9>"$LOG_DIR/healthcheck.lock"
+flock -n 9 || exit 0
+
 problems=0
 
 disk=$(df --output=pcent / | tail -1 | tr -dc 0-9)

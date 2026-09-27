@@ -3,14 +3,19 @@
 # into an encrypted restic repo. Keeps 7 daily + 4 weekly snapshots.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
-set -a; source "$OPS_DIR/.env"; set +a
 
-trap 'alert "backup FAILED"' ERR
+# Not debounced like healthcheck.sh's alert_once: this runs once daily via
+# cron, not polled every 5 minutes, so there's no repeat-spam risk to guard
+# against — every failure here is a distinct, single event worth reporting.
+trap 'alert "backup FAILED"; telegram_send "ALERT: backup FAILED"' ERR
 
 [ -s "$RESTIC_PASSWORD_FILE" ] || { echo "missing $RESTIC_PASSWORD_FILE" >&2; exit 1; }
 
 used_percent=$(df --output=pcent "$BACKUP_DIR" | tail -1 | tr -dc 0-9)
-[ "$used_percent" -lt 85 ] || alert "backup disk ${used_percent}% full"
+if [ "$used_percent" -ge 85 ]; then
+  alert "backup disk ${used_percent}% full"
+  telegram_send "ALERT: backup disk ${used_percent}% full"
+fi
 
 [ -e "$BACKUP_DIR/restic-repo/config" ] || restic -- init
 
