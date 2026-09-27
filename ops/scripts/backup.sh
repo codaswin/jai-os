@@ -7,6 +7,13 @@
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
+# Same reasoning as healthcheck.sh's lock: an overlapping invocation (a stuck
+# prior run, or a manual run colliding with cron) racing this one's
+# rm-then-dump-then-restic sequence could delete a dump the other run hasn't
+# finished writing yet, producing a torn pair that restic then backs up.
+exec 9>"$LOG_DIR/backup.lock"
+flock -n 9 || { alert "backup skipped: already running"; exit 0; }
+
 # Not debounced like healthcheck.sh's alert_once: this runs once daily via
 # cron, not polled every 5 minutes, so there's no repeat-spam risk to guard
 # against — every failure here is a distinct, single event worth reporting.

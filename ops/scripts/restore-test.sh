@@ -13,8 +13,10 @@ trap cleanup EXIT
 restic -v "$work:/restore" -- restore latest --target /restore
 restic -v "$work:/restore" --entrypoint /bin/sh -- -c "chown -R $(id -u):$(id -g) /restore"
 
-twenty_dump=$(ls "$work"/data/dumps/twenty-*.dump)
-agent_dump=$(ls "$work"/data/dumps/agent-*.dump)
+twenty_dump=$(ls "$work"/data/dumps/twenty-*.dump 2>/dev/null) ||
+  { echo "twenty dump missing from snapshot" >&2; exit 1; }
+agent_dump=$(ls "$work"/data/dumps/agent-*.dump 2>/dev/null) ||
+  { echo "agent dump missing from snapshot (a snapshot from before ticket #24 has none — run backup.sh again first)" >&2; exit 1; }
 [ -d "$work/data/storage" ] || { echo "storage missing from snapshot" >&2; exit 1; }
 [ -f "$work/data/ops/docker-compose.yml" ] || { echo "deploy config missing from snapshot" >&2; exit 1; }
 
