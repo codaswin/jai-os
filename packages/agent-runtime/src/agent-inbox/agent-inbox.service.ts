@@ -3,6 +3,8 @@ import type IORedis from 'ioredis';
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 
 import { AGENT_INBOX_QUEUE, AGENT_REDIS_CONNECTION } from './agent-inbox-queue.provider';
+import { AgentInboxWorkerService } from './agent-inbox-worker.service';
+import { DEMO_JOB_NAME } from './agent-inbox.constants';
 import { AgentInboxRepository } from './agent-inbox.repository';
 import { type InboxEventRecord } from './types';
 
@@ -30,17 +32,25 @@ const JOB_OPTIONS = {
 // finds the row already completed and skips re-enqueueing, which is itself
 // the live proof that duplicate protection survives a restart.
 const DEMO_ACTION_ID = 'agent-inbox-demo';
-export const DEMO_JOB_NAME = 'demo-echo';
+
+// Recovery also runs on this interval, not only at boot: submit() commits the
+// Postgres row before calling queue.add, so a queue.add that throws (a
+// transient Redis blip, say) leaves a row stuck "pending" with nothing in
+// Redis until something re-checks it — on a long-running deploy, boot-only
+// recovery could leave that gap open for days.
+const RECOVERY_INTERVAL_MS = 60_000;
 
 @Injectable()
 export class AgentInboxService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AgentInboxService.name);
   private initPromise: Promise<void> = Promise.resolve();
+  private recoveryIntervalHandle: NodeJS.Timeout | undefined;
 
   constructor(
     @Inject(AGENT_REDIS_CONNECTION) private readonly connection: IORedis,
     @Inject(AGENT_INBOX_QUEUE) private readonly queue: Queue,
     private readonly repository: AgentInboxRepository,
+    private readonly worker: AgentInboxWorkerService,
   ) {}
 
   onModuleInit(): void {
@@ -49,13 +59,30 @@ export class AgentInboxService implements OnModuleInit, OnModuleDestroy {
     // the rest of the app from starting. Tracked so onModuleDestroy can wait
     // for it before closing the connections it's still using.
     this.initPromise = this.initializeAndRunDemo();
+
+    this.recoveryIntervalHandle = setInterval(() => {
+      this.recoverPendingEvents().catch((error) =>
+        this.logger.error(
+          'Periodic inbox recovery failed',
+          error instanceof Error ? error.stack : error,
+        ),
+      );
+    }, RECOVERY_INTERVAL_MS);
   }
 
+  // Explicit order, not left to Nest (which runs a module's providers'
+  // onModuleDestroy hooks concurrently, not by dependency): the worker closes
+  // first, so any in-flight job's own DB write finishes before anything else
+  // shuts down, then the queue/connection, then the repository pool last,
+  // since both this service and the worker write through it right up until
+  // their own close() calls above resolve.
   async onModuleDestroy(): Promise<void> {
+    clearInterval(this.recoveryIntervalHandle);
     await this.initPromise;
+    await this.worker.close();
     await this.queue.close();
     await this.connection.quit();
-    await this.repository.end();
+    await this.repository.close();
   }
 
   // Commits the event to the durable inbox before acknowledging it, then
@@ -114,10 +141,10 @@ export class AgentInboxService implements OnModuleInit, OnModuleDestroy {
 
   // Re-enqueues any inbox row left pending/processing with no matching job in
   // Redis — the gap a crash between the DB commit and queue.add (or a lost
-  // Redis job despite persistence) would otherwise leave stuck forever. A
-  // worker that merely died mid-job doesn't need this: BullMQ's own stalled-
-  // job recovery resumes that once a worker restarts, since the job is still
-  // in Redis.
+  // Redis job despite persistence) would otherwise leave stuck forever. Run
+  // at boot and on RECOVERY_INTERVAL_MS above. A worker that merely died
+  // mid-job doesn't need this: BullMQ's own stalled-job recovery resumes that
+  // once a worker restarts, since the job is still in Redis.
   private async recoverPendingEvents(): Promise<void> {
     const recoverable = await this.repository.findRecoverable();
 

@@ -1,11 +1,11 @@
-import { type Job, Worker } from 'bullmq';
+import { type Job, UnrecoverableError, Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AGENT_INBOX_QUEUE_NAME } from './agent-inbox-queue.provider';
+import { DEMO_JOB_NAME } from './agent-inbox.constants';
 import { AgentInboxRepository } from './agent-inbox.repository';
-import { DEMO_JOB_NAME } from './agent-inbox.service';
 
 // Fails on its very first attempt and succeeds after — proves the bounded-
 // retry-with-backoff acceptance criterion against something real rather than
@@ -29,8 +29,24 @@ export function runJob(job: Job): unknown {
   }
 }
 
+// BullMQ emits its own 'completed'/'failed' Worker events on every attempt,
+// including ones that go on to retry — they are not "this job is done", so
+// the terminal inbox status can't be written from them. Determined here
+// instead, synchronously inside the awaited processor call: `job.attemptsMade`
+// going into this attempt (0 on the first try) plus this one equals the
+// count BullMQ will see once it finishes handling the failure.
+export function isFinalAttempt(job: Job, error: unknown): boolean {
+  if (error instanceof UnrecoverableError) {
+    return true;
+  }
+
+  const configuredAttempts = job.opts.attempts ?? 1;
+
+  return job.attemptsMade + 1 >= configuredAttempts;
+}
+
 @Injectable()
-export class AgentInboxWorkerService implements OnModuleDestroy {
+export class AgentInboxWorkerService {
   private readonly logger = new Logger(AgentInboxWorkerService.name);
   private readonly connection: IORedis;
   private readonly worker: Worker;
@@ -46,40 +62,17 @@ export class AgentInboxWorkerService implements OnModuleDestroy {
     this.worker = new Worker(AGENT_INBOX_QUEUE_NAME, (job) => this.process(job), {
       connection: this.connection,
     });
-
-    // Whether a job completes or exhausts retries is a Worker-level
-    // determination the processor itself can't cleanly make (a per-call
-    // `opts.attempts` override would make attemptsMade-based guessing
-    // fragile), so the terminal inbox status is recorded from these events
-    // rather than inside process() below.
-    this.worker.on('completed', (job) => {
-      this.repository
-        .markCompleted(job.id as string, job.returnvalue)
-        .catch((error) =>
-          this.logger.error(
-            `Failed to record completion for inbox event ${job.id}`,
-            error instanceof Error ? error.stack : error,
-          ),
-        );
-    });
-
-    this.worker.on('failed', (job, error) => {
-      if (!job) {
-        return;
-      }
-
-      this.repository
-        .markFailed(job.id as string, error.message)
-        .catch((markError) =>
-          this.logger.error(
-            `Failed to record failure for inbox event ${job.id}`,
-            markError instanceof Error ? markError.stack : markError,
-          ),
-        );
-    });
   }
 
-  async onModuleDestroy(): Promise<void> {
+  // Not a Nest lifecycle hook: Nest runs every provider's onModuleDestroy in
+  // the same module concurrently (Promise.all), not in dependency order, so
+  // relying on one to run this doesn't guarantee it finishes before
+  // AgentInboxService closes the repository pool this worker still writes
+  // to. AgentInboxService.onModuleDestroy calls this explicitly, first.
+  // Awaiting worker.close() here waits for any in-flight job's own processing
+  // promise — including its markCompleted/markFailed write — to settle
+  // first, so that write is never racing a pool that's mid-close.
+  async close(): Promise<void> {
     await this.worker.close();
     await this.connection.quit();
   }
@@ -87,6 +80,27 @@ export class AgentInboxWorkerService implements OnModuleDestroy {
   private async process(job: Job): Promise<unknown> {
     await this.repository.markProcessing(job.id as string);
 
-    return runJob(job);
+    let result: unknown;
+
+    try {
+      result = await runJob(job);
+    } catch (error) {
+      // A DB failure here must not be mistaken for the job itself failing —
+      // runJob already succeeded, so re-throwing (unmarked) lets BullMQ retry
+      // the whole attempt, which will also retry this write, rather than
+      // recording a misleading "failed" status for a job that actually ran.
+      if (isFinalAttempt(job, error)) {
+        await this.repository.markFailed(
+          job.id as string,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+
+      throw error;
+    }
+
+    await this.repository.markCompleted(job.id as string, result);
+
+    return result;
   }
 }

@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 
 import { AGENT_INBOX_QUEUE, AGENT_REDIS_CONNECTION } from './agent-inbox-queue.provider';
+import { AgentInboxWorkerService } from './agent-inbox-worker.service';
 import { AgentInboxRepository } from './agent-inbox.repository';
 import { AgentInboxService } from './agent-inbox.service';
 import { type InboxEventRecord } from './types';
@@ -8,9 +9,17 @@ import { type InboxEventRecord } from './types';
 describe('AgentInboxService', () => {
   let service: AgentInboxService;
   let repository: jest.Mocked<
-    Pick<AgentInboxRepository, 'insertIfAbsent' | 'find' | 'findRecoverable' | 'setup'>
+    Pick<AgentInboxRepository, 'insertIfAbsent' | 'find' | 'findRecoverable' | 'setup' | 'close'>
   >;
-  let queue: { add: jest.Mock; getWaiting: jest.Mock; getFailed: jest.Mock; getJob: jest.Mock };
+  let queue: {
+    add: jest.Mock;
+    getWaiting: jest.Mock;
+    getFailed: jest.Mock;
+    getJob: jest.Mock;
+    close: jest.Mock;
+  };
+  let worker: jest.Mocked<Pick<AgentInboxWorkerService, 'close'>>;
+  let connection: { quit: jest.Mock };
 
   const pendingRecord: InboxEventRecord = {
     actionId: 'action-1',
@@ -27,20 +36,25 @@ describe('AgentInboxService', () => {
       find: jest.fn(),
       findRecoverable: jest.fn().mockResolvedValue([]),
       setup: jest.fn().mockResolvedValue(undefined),
+      close: jest.fn().mockResolvedValue(undefined),
     };
     queue = {
       add: jest.fn(),
       getWaiting: jest.fn().mockResolvedValue([]),
       getFailed: jest.fn().mockResolvedValue([]),
       getJob: jest.fn(),
+      close: jest.fn().mockResolvedValue(undefined),
     };
+    worker = { close: jest.fn().mockResolvedValue(undefined) };
+    connection = { quit: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         AgentInboxService,
-        { provide: AGENT_REDIS_CONNECTION, useValue: {} },
+        { provide: AGENT_REDIS_CONNECTION, useValue: connection },
         { provide: AGENT_INBOX_QUEUE, useValue: queue },
         { provide: AgentInboxRepository, useValue: repository },
+        { provide: AgentInboxWorkerService, useValue: worker },
       ],
     }).compile();
 
@@ -113,6 +127,23 @@ describe('AgentInboxService', () => {
       await service['recoverPendingEvents']();
 
       expect(queue.add).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onModuleDestroy', () => {
+    it('closes the worker before the repository pool, since the worker still writes through it', async () => {
+      const closeOrder: string[] = [];
+
+      worker.close.mockImplementation(async () => {
+        closeOrder.push('worker');
+      });
+      repository.close.mockImplementation(async () => {
+        closeOrder.push('repository');
+      });
+
+      await service.onModuleDestroy();
+
+      expect(closeOrder).toEqual(['worker', 'repository']);
     });
   });
 });

@@ -20,6 +20,15 @@ const toRecord = (row: {
   error: row.error,
 });
 
+// pg only auto-serializes a plain object/array parameter into a jsonb column;
+// a bare top-level string (unlike a number or boolean, which happen to be
+// valid JSON text on their own) is sent as raw unquoted text and fails
+// jsonb's implicit cast. Stringifying explicitly is correct for every shape,
+// not just the ones that happened to work by coincidence. `undefined` stays
+// `undefined` (binds as SQL NULL) rather than becoming the string "undefined".
+const toJsonParam = (value: unknown): string | undefined =>
+  value === undefined ? undefined : JSON.stringify(value);
+
 // The durable agent inbox: an inbound event is committed here before it's
 // acknowledged, so a crash between "received" and "enqueued in BullMQ" never
 // silently drops it — AgentInboxService's recovery pass re-enqueues any row
@@ -35,6 +44,15 @@ export class AgentInboxRepository {
     this.pool = new Pool({
       connectionString: configService.getOrThrow<string>('AGENT_DB_URL'),
     });
+  }
+
+  // Not a Nest lifecycle hook, deliberately: Nest runs every provider's
+  // onModuleDestroy in a module concurrently, not in dependency order, so
+  // implementing OnModuleDestroy here wouldn't guarantee this runs after the
+  // consumers still writing through this pool have stopped. AgentInboxService
+  // calls this explicitly, last, once those consumers are already closed.
+  async close(): Promise<void> {
+    await this.pool.end();
   }
 
   async setup(): Promise<void> {
@@ -64,7 +82,7 @@ export class AgentInboxRepository {
        VALUES ($1, $2, $3)
        ON CONFLICT (action_id) DO NOTHING
        RETURNING action_id, job_name, payload, status, result, error`,
-      [actionId, jobName, payload],
+      [actionId, jobName, toJsonParam(payload)],
     );
 
     return result.rows[0] ? toRecord(result.rows[0]) : null;
@@ -92,7 +110,7 @@ export class AgentInboxRepository {
       `UPDATE agent_inbox_events
        SET status = 'completed', result = $2, error = NULL, updated_at = now()
        WHERE action_id = $1`,
-      [actionId, result],
+      [actionId, toJsonParam(result)],
     );
   }
 
@@ -117,9 +135,5 @@ export class AgentInboxRepository {
     );
 
     return result.rows.map(toRecord);
-  }
-
-  async end(): Promise<void> {
-    await this.pool.end();
   }
 }
