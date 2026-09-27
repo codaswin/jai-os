@@ -45,7 +45,7 @@ Every `LlmService.generate()` call and every Controlled Tool API call is also a 
 
 ## Backups
 
-`scripts/backup.sh` dumps Postgres, then snapshots the dump, file storage and deploy config (minus secrets) into an encrypted restic repo in `backups/`. It keeps 7 daily and 4 weekly snapshots. Cron it daily:
+`scripts/backup.sh` dumps Postgres, then snapshots the dump, file storage and deploy config (minus secrets) into an encrypted restic repo in `backups/`. It keeps 7 daily and 4 weekly snapshots. A backup failure or a near-full backup disk also reaches Telegram immediately (not debounced like `healthcheck.sh`'s checks below — this runs once daily, not every 5 minutes, so there's no repeat-spam risk). Cron it daily:
 
 ```
 15 2 * * * /path/to/ops/scripts/backup.sh >> /path/to/ops/logs/backup.log 2>&1
@@ -55,7 +55,7 @@ Same-VPS storage is an accepted limitation: losing the VPS loses production and 
 
 ## Monitoring
 
-`scripts/healthcheck.sh` checks disk, memory, container health and backup freshness, and appends problems to `logs/alerts.log`. Cron it every 5 minutes. Telegram alerts arrive in Phase 2. A check running on the VPS cannot report that the whole VPS is down.
+`scripts/healthcheck.sh` checks disk, memory, container health and backup freshness, and appends problems to `logs/alerts.log` every run (unchanged from Phase 1). It also pushes to the founder's Telegram bot via `lib.sh`'s `alert_once`/`recover_once` — one message when a check starts failing, one when it recovers, not one every 5 minutes for as long as it stays broken; needs `TELEGRAM_BOT_TOKEN`/`TELEGRAM_FOUNDER_CHAT_ID` in `.env` (ticket #16) and `curl` on the host, and silently stays local-only without them, so this still works on a deploy that predates Telegram. Which checks are currently failing lives in `logs/alert-state`, not `.env` or a database. A run holds `logs/healthcheck.lock` (`flock`) for its duration; an overlapping cron invocation — a prior run stuck on a wedged Docker daemon, say — skips rather than racing it on that state file. Cron it every 5 minutes. Queue and failed-job age alerts are separate (`agent-runtime`'s own `QUEUE_AGE_ALERT_THRESHOLD_MS`/`FAILED_JOB_AGE_ALERT_THRESHOLD_MS`, ticket #21), since they need the queue to exist first. A check running on the VPS cannot report that the whole VPS is down.
 
 ```
 */5 * * * * /path/to/ops/scripts/healthcheck.sh
