@@ -6,6 +6,7 @@ import { AGENT_INBOX_QUEUE, AGENT_REDIS_CONNECTION } from './agent-inbox-queue.p
 import { AgentInboxWorkerService } from './agent-inbox-worker.service';
 import { DEMO_JOB_NAME } from './agent-inbox.constants';
 import { AgentInboxRepository } from './agent-inbox.repository';
+import { getJobOptions } from './job-handler-registry';
 import { type InboxEventRecord } from './types';
 
 // Bounded retries with backoff on transient failure (ticket acceptance
@@ -20,12 +21,21 @@ const JOB_BACKOFF_DELAY_MS = 2_000;
 const KEEP_COMPLETED_JOBS = 1_000;
 const KEEP_FAILED_JOBS = 5_000;
 
-const JOB_OPTIONS = {
+const DEFAULT_JOB_OPTIONS = {
   attempts: JOB_ATTEMPTS,
   backoff: { type: 'exponential' as const, delay: JOB_BACKOFF_DELAY_MS },
   removeOnComplete: { count: KEEP_COMPLETED_JOBS },
   removeOnFail: { count: KEEP_FAILED_JOBS },
 };
+
+// A job type can override these (see ApprovalService, which needs far more
+// attempts at a much longer, fixed interval to poll for a decision) — applied
+// here rather than left to each caller to remember, so recoverPendingEvents
+// below re-enqueues with the same options a normal submit() would have used,
+// not silently falling back to the generic defaults.
+function buildJobOptions(jobName: string) {
+  return { ...DEFAULT_JOB_OPTIONS, ...getJobOptions(jobName) };
+}
 
 // A fixed action ID, like AgentGraphService's fixed thread ID and
 // ControlledToolApiService's demo action ID: every boot after the first
@@ -101,7 +111,7 @@ export class AgentInboxService implements OnModuleInit, OnModuleDestroy {
       return existing;
     }
 
-    await this.queue.add(jobName, payload, { jobId: actionId, ...JOB_OPTIONS });
+    await this.queue.add(jobName, payload, { jobId: actionId, ...buildJobOptions(jobName) });
 
     return inserted;
   }
@@ -159,7 +169,7 @@ export class AgentInboxService implements OnModuleInit, OnModuleDestroy {
 
       await this.queue.add(event.jobName, event.payload, {
         jobId: event.actionId,
-        ...JOB_OPTIONS,
+        ...buildJobOptions(event.jobName),
       });
     }
   }
