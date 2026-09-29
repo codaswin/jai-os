@@ -3,6 +3,8 @@ import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@ne
 
 import { AgentInboxService } from '../agent-inbox/agent-inbox.service';
 import { registerJobHandler } from '../agent-inbox/job-handler-registry';
+import { ControlledToolApiService } from '../controlled-tool-api/controlled-tool-api.service';
+import { type AgentIdentity } from '../controlled-tool-api/types';
 import { type ApprovalDecision, TelegramBotService } from '../telegram/telegram-bot.service';
 import { ApprovalRepository } from './approval.repository';
 import { type ApprovalRecord } from './types';
@@ -31,6 +33,16 @@ const EXPIRY_SWEEP_INTERVAL_MS = 60_000;
 
 const DEMO_ACTION_ID = 'approval-demo';
 
+// Used for every approval-gated tool call this service executes. Broad
+// enough to cover today's one real gated tool (ticket #25); a Phase 3 agent
+// proposing its own approval-gated actions will need real per-caller
+// identity propagation, which is explicitly out of scope here — see
+// CONTEXT.md.
+const APPROVAL_EXECUTION_IDENTITY: AgentIdentity = {
+  agentId: 'approval-execution',
+  scopes: ['note:write'],
+};
+
 @Injectable()
 export class ApprovalService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ApprovalService.name);
@@ -41,6 +53,7 @@ export class ApprovalService implements OnModuleInit, OnModuleDestroy {
     private readonly repository: ApprovalRepository,
     private readonly telegramBot: TelegramBotService,
     private readonly agentInbox: AgentInboxService,
+    private readonly controlledToolApi: ControlledToolApiService,
   ) {
     // Registered here, not in onModuleInit: Nest constructs every provider in
     // the app (across every module) before calling any lifecycle hook, but
@@ -91,14 +104,29 @@ export class ApprovalService implements OnModuleInit, OnModuleDestroy {
     await this.repository.close();
   }
 
+  // toolName is null for a generic approval with no real tool behind it
+  // (ticket #22's own boot demo); set for one gating a real Controlled Tool
+  // API call (ticket #25) — executeApprovalGatedJob branches on it.
+  //
   // Commits the proposal before sending the Telegram request, so a crash
   // between the two never leaves a Telegram message referencing an action ID
   // nothing durable backs — the founder tapping a stale button just finds no
   // pending approval to decide. If this action ID was already proposed, the
   // existing record is returned and no second Telegram message is sent.
-  async propose(actionId: string, description: string, payload: unknown): Promise<ApprovalRecord> {
+  async propose(
+    actionId: string,
+    toolName: string | null,
+    description: string,
+    payload: unknown,
+  ): Promise<ApprovalRecord> {
     const expiresAt = new Date(Date.now() + APPROVAL_TTL_MS);
-    const inserted = await this.repository.insertIfAbsent(actionId, description, payload, expiresAt);
+    const inserted = await this.repository.insertIfAbsent(
+      actionId,
+      description,
+      toolName,
+      payload,
+      expiresAt,
+    );
 
     if (!inserted) {
       const existing = await this.repository.find(actionId);
@@ -178,21 +206,71 @@ export class ApprovalService implements OnModuleInit, OnModuleDestroy {
       throw new UnrecoverableError(`Approval ${actionId} was ${approval.status}`);
     }
 
-    const result = await this.repository.checkAndConsume(actionId, job.data);
+    // A prior attempt already ran the real work and recorded it (checked
+    // *before* calling the tool below, not only via checkAndConsume's own
+    // outcome — see why in the comment above the tool call).
+    if (approval.status === 'executed') {
+      return { executed: true, alreadyExecuted: true };
+    }
 
-    if (result.outcome === 'not-authorized') {
-      throw new UnrecoverableError(
-        `Approval ${actionId} did not authorize execution: ${result.reason}`,
+    // approval.status === 'approved' from here. The real work happens
+    // *before* the CAS that marks it 'executed', deliberately — an earlier
+    // version of this method called checkAndConsume first, which meant a
+    // crash between the CAS succeeding and the tool call completing would
+    // leave the approval permanently marked 'executed' even though the real
+    // Twenty-side write never happened: silent data loss, not just a
+    // duplicate risk. With the tool called first, a crash here instead
+    // leaves the approval still 'approved', so BullMQ's own retry re-enters
+    // this method and tries the tool again — safe only because the tool's
+    // own execute() is independently idempotent (see its own doc comment),
+    // not because this method's ordering alone accomplishes it.
+    const toolResult = approval.toolName
+      ? await this.controlledToolApi.callApprovedTool(
+          APPROVAL_EXECUTION_IDENTITY,
+          approval.toolName,
+          job.data,
+          actionId,
+        )
+      : undefined;
+
+    const consumed = await this.repository.checkAndConsume(actionId, job.data);
+
+    if (consumed.outcome === 'not-authorized') {
+      if (!approval.toolName) {
+        // Unlike the tool branch below, no real work happened here — there's
+        // nothing idempotent to protect against a retry, so this must not be
+        // reported as a success. Thrown as a plain Error (retryable, not
+        // Unrecoverable): the next attempt re-fetches the approval from the
+        // top of this method and resolves to whatever its state actually
+        // become (rejected/expired -> UnrecoverableError there; still
+        // approved -> tries the CAS again), rather than this branch trying
+        // to re-derive that terminal outcome itself.
+        throw new Error(
+          `Approval ${actionId} could not be recorded as executed: ${consumed.reason}`,
+        );
+      }
+
+      // The real work above already happened (and, for a real tool, is
+      // safely idempotent) — this can only mean something changed
+      // underneath us since the fetch above, not a normal flow. Logged, not
+      // thrown: throwing would make BullMQ retry a tool call that already
+      // succeeded.
+      this.logger.error(
+        `Approval ${actionId}'s real work completed but checkAndConsume then reported not-authorized: ${consumed.reason}`,
       );
     }
 
-    return { executed: true, alreadyExecuted: result.outcome === 'already-executed' };
+    return {
+      executed: true,
+      alreadyExecuted: consumed.outcome === 'already-executed',
+      result: toolResult,
+    };
   }
 
   private async runDemo(): Promise<void> {
     try {
       await this.repository.setup();
-      await this.propose(DEMO_ACTION_ID, 'Approvals demo action', { message: 'approvals demo' });
+      await this.propose(DEMO_ACTION_ID, null, 'Approvals demo action', { message: 'approvals demo' });
       // Simulates the founder tapping Approve — proves propose -> decide ->
       // enqueue -> checkAndConsume end to end without a real Telegram round
       // trip, which this dev/CI environment has no way to drive (see

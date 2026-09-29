@@ -27,3 +27,12 @@ export class PermissionScopeError extends Error {
     this.name = 'PermissionScopeError';
   }
 }
+
+export class ApprovalRequiredError extends Error {
+  constructor(toolName: string) {
+    super(
+      `Tool "${toolName}" requires approval and cannot be called directly — use ApprovalService.propose instead`,
+    );
+    this.name = 'ApprovalRequiredError';
+  }
+}

@@ -20,6 +20,23 @@ export function incrementCount(
 // of starting a fresh thread each time — that's what proves persistence works.
 const DEMO_THREAD_ID = 'agent-graph-demo';
 
+// A separate, minimal graph for ticket #25's proof action: one node,
+// checkpointed under thread_id = the action's own actionId (not this file's
+// fixed DEMO_THREAD_ID), so each proof action run gets its own real,
+// queryable checkpoint history. Deliberately not folded into DemoGraphState
+// above — see this class's own CONTEXT.md entry on why runDemo isn't grown
+// in place.
+const ProofActionGraphState = Annotation.Root({
+  payload: Annotation<unknown>(),
+  proposedAt: Annotation<string>(),
+});
+
+function proposeProofAction(
+  _state: typeof ProofActionGraphState.State,
+): Partial<typeof ProofActionGraphState.State> {
+  return { proposedAt: new Date().toISOString() };
+}
+
 @Injectable()
 export class AgentGraphService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AgentGraphService.name);
@@ -75,5 +92,24 @@ export class AgentGraphService implements OnModuleInit, OnModuleDestroy {
     );
 
     return result.count;
+  }
+
+  // Ticket #25: a real LangGraph checkpoint write tied to one specific
+  // proof-action run, not this file's own fixed-thread demo above. Reuses
+  // this.checkpointer (the same Postgres connection, same underlying
+  // checkpoint tables — thread_id is what isolates one run from another,
+  // not a separate connection or table set) rather than every caller
+  // opening its own PostgresSaver, which this RAM-constrained deploy has no
+  // spare connections for.
+  async checkpointProofAction(threadId: string, payload: unknown): Promise<void> {
+    await this.initPromise;
+
+    const graph = new StateGraph(ProofActionGraphState)
+      .addNode('propose', proposeProofAction)
+      .addEdge(START, 'propose')
+      .addEdge('propose', END)
+      .compile({ checkpointer: this.checkpointer });
+
+    await graph.invoke({ payload, proposedAt: '' }, { configurable: { thread_id: threadId } });
   }
 }
