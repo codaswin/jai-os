@@ -1,6 +1,7 @@
 import { type Job, UnrecoverableError } from 'bullmq';
 
 import { AgentInboxService } from '../agent-inbox/agent-inbox.service';
+import { ControlledToolApiService } from '../controlled-tool-api/controlled-tool-api.service';
 import { TelegramBotService } from '../telegram/telegram-bot.service';
 import { ApprovalRepository } from './approval.repository';
 import { ApprovalService } from './approval.service';
@@ -13,10 +14,12 @@ describe('ApprovalService', () => {
   >;
   let telegramBot: jest.Mocked<Pick<TelegramBotService, 'sendApprovalRequest' | 'onApprovalCallback'>>;
   let agentInbox: jest.Mocked<Pick<AgentInboxService, 'submit'>>;
+  let controlledToolApi: jest.Mocked<Pick<ControlledToolApiService, 'callApprovedTool'>>;
 
   const pendingRecord: ApprovalRecord = {
     actionId: 'action-1',
     description: 'do the thing',
+    toolName: null,
     payload: { foo: 'bar' },
     status: 'pending',
     expiresAt: new Date(Date.now() + 60_000),
@@ -35,11 +38,13 @@ describe('ApprovalService', () => {
       onApprovalCallback: jest.fn(),
     };
     agentInbox = { submit: jest.fn().mockResolvedValue(undefined) };
+    controlledToolApi = { callApprovedTool: jest.fn().mockResolvedValue({ noteId: 'note-1' }) };
 
     service = new ApprovalService(
       repository as unknown as ApprovalRepository,
       telegramBot as unknown as TelegramBotService,
       agentInbox as unknown as AgentInboxService,
+      controlledToolApi as unknown as ControlledToolApiService,
     );
   });
 
@@ -47,7 +52,7 @@ describe('ApprovalService', () => {
     it('commits a new approval and sends a Telegram request', async () => {
       repository.insertIfAbsent.mockResolvedValue(pendingRecord);
 
-      const result = await service.propose('action-1', 'do the thing', { foo: 'bar' });
+      const result = await service.propose('action-1', null, 'do the thing', { foo: 'bar' });
 
       expect(result).toEqual(pendingRecord);
       expect(telegramBot.sendApprovalRequest).toHaveBeenCalledWith(
@@ -60,10 +65,24 @@ describe('ApprovalService', () => {
       repository.insertIfAbsent.mockResolvedValue(null);
       repository.find.mockResolvedValue(pendingRecord);
 
-      const result = await service.propose('action-1', 'do the thing', { foo: 'bar' });
+      const result = await service.propose('action-1', null, 'do the thing', { foo: 'bar' });
 
       expect(result).toEqual(pendingRecord);
       expect(telegramBot.sendApprovalRequest).not.toHaveBeenCalled();
+    });
+
+    it('passes the tool name through to the repository for a gated real tool call', async () => {
+      repository.insertIfAbsent.mockResolvedValue({ ...pendingRecord, toolName: 'add-proof-note-to-test-contact' });
+
+      await service.propose('action-1', 'add-proof-note-to-test-contact', 'do the thing', { foo: 'bar' });
+
+      expect(repository.insertIfAbsent).toHaveBeenCalledWith(
+        'action-1',
+        'do the thing',
+        'add-proof-note-to-test-contact',
+        { foo: 'bar' },
+        expect.any(Date),
+      );
     });
   });
 
@@ -139,32 +158,129 @@ describe('ApprovalService', () => {
       expect(repository.checkAndConsume).not.toHaveBeenCalled();
     });
 
-    it('executes once for an approved approval with a matching payload', async () => {
+    it('executes once for an approved approval with a matching payload and no tool (generic demo path)', async () => {
       repository.find.mockResolvedValue({ ...pendingRecord, status: 'approved' });
       repository.checkAndConsume.mockResolvedValue({ outcome: 'consumed' });
 
       const result = await service['executeApprovalGatedJob'](job());
 
       expect(result).toEqual({ executed: true, alreadyExecuted: false });
+      expect(controlledToolApi.callApprovedTool).not.toHaveBeenCalled();
     });
 
-    it('treats an already-executed approval as a harmless no-op, not a failure', async () => {
-      repository.find.mockResolvedValue({ ...pendingRecord, status: 'approved' });
-      repository.checkAndConsume.mockResolvedValue({ outcome: 'already-executed' });
+    it('calls the real tool before checkAndConsume, not after', async () => {
+      repository.find.mockResolvedValue({
+        ...pendingRecord,
+        status: 'approved',
+        toolName: 'add-proof-note-to-test-contact',
+      });
+      repository.checkAndConsume.mockResolvedValue({ outcome: 'consumed' });
+
+      const callOrder: string[] = [];
+
+      controlledToolApi.callApprovedTool.mockImplementation(async () => {
+        callOrder.push('tool');
+
+        return { noteId: 'note-1' };
+      });
+      repository.checkAndConsume.mockImplementation(async () => {
+        callOrder.push('checkAndConsume');
+
+        return { outcome: 'consumed' };
+      });
+
+      const result = await service['executeApprovalGatedJob'](job());
+
+      expect(callOrder).toEqual(['tool', 'checkAndConsume']);
+      expect(controlledToolApi.callApprovedTool).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId: 'approval-execution' }),
+        'add-proof-note-to-test-contact',
+        { foo: 'bar' },
+        'action-1',
+      );
+      expect(result).toEqual({ executed: true, alreadyExecuted: false, result: { noteId: 'note-1' } });
+    });
+
+    it('treats an already-executed approval as a harmless no-op, never calling the tool or checkAndConsume again', async () => {
+      repository.find.mockResolvedValue({
+        ...pendingRecord,
+        status: 'executed',
+        toolName: 'add-proof-note-to-test-contact',
+      });
 
       const result = await service['executeApprovalGatedJob'](job());
 
       expect(result).toEqual({ executed: true, alreadyExecuted: true });
+      expect(controlledToolApi.callApprovedTool).not.toHaveBeenCalled();
+      expect(repository.checkAndConsume).not.toHaveBeenCalled();
     });
 
-    it('permanently fails when the payload does not match what was approved', async () => {
-      repository.find.mockResolvedValue({ ...pendingRecord, status: 'approved' });
+    it('never marks executed without the real work having happened first (the mid-flight-kill guarantee)', async () => {
+      // If the process died right here — between the tool call and
+      // checkAndConsume — the approval must still read 'approved', not
+      // 'executed', so a retry knows to actually try the write again.
+      repository.find.mockResolvedValue({
+        ...pendingRecord,
+        status: 'approved',
+        toolName: 'add-proof-note-to-test-contact',
+      });
+      controlledToolApi.callApprovedTool.mockImplementation(async () => {
+        expect(repository.checkAndConsume).not.toHaveBeenCalled();
+
+        return { noteId: 'note-1' };
+      });
+      repository.checkAndConsume.mockResolvedValue({ outcome: 'consumed' });
+
+      await service['executeApprovalGatedJob'](job());
+
+      expect(controlledToolApi.callApprovedTool).toHaveBeenCalled();
+      expect(repository.checkAndConsume).toHaveBeenCalled();
+    });
+
+    it('does not throw when checkAndConsume unexpectedly reports not-authorized after the real work already ran', async () => {
+      repository.find.mockResolvedValue({
+        ...pendingRecord,
+        status: 'approved',
+        toolName: 'add-proof-note-to-test-contact',
+      });
       repository.checkAndConsume.mockResolvedValue({
         outcome: 'not-authorized',
         reason: 'payload does not match the approved payload',
       });
 
-      await expect(service['executeApprovalGatedJob'](job())).rejects.toThrow(UnrecoverableError);
+      // Not rejects.toThrow: the tool call already happened and (for a real
+      // tool) is safely idempotent — throwing here would make BullMQ retry a
+      // call that already succeeded, which is worse than logging.
+      const result = await service['executeApprovalGatedJob'](job());
+
+      expect(controlledToolApi.callApprovedTool).toHaveBeenCalled();
+      expect(result).toEqual({ executed: true, alreadyExecuted: false, result: { noteId: 'note-1' } });
+    });
+
+    it('throws (retryable) when checkAndConsume reports not-authorized for a tool-less approval, since no real work happened to protect a retry', async () => {
+      repository.find.mockResolvedValue({ ...pendingRecord, status: 'approved', toolName: null });
+      repository.checkAndConsume.mockResolvedValue({
+        outcome: 'not-authorized',
+        reason: 'approval status is "expired"',
+      });
+
+      await expect(service['executeApprovalGatedJob'](job())).rejects.toThrow(
+        'could not be recorded as executed',
+      );
+      expect(controlledToolApi.callApprovedTool).not.toHaveBeenCalled();
+    });
+
+    it('reports alreadyExecuted: true when checkAndConsume itself reports already-executed (a genuine concurrent-worker race)', async () => {
+      repository.find.mockResolvedValue({
+        ...pendingRecord,
+        status: 'approved',
+        toolName: 'add-proof-note-to-test-contact',
+      });
+      repository.checkAndConsume.mockResolvedValue({ outcome: 'already-executed' });
+
+      const result = await service['executeApprovalGatedJob'](job());
+
+      expect(result).toEqual({ executed: true, alreadyExecuted: true, result: { noteId: 'note-1' } });
     });
   });
 });

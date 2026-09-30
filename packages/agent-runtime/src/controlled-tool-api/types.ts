@@ -12,6 +12,11 @@ export type ToolDefinition<TPayload, TResult> = {
   // sees the payload — the boundary is the enforcement point, not each tool.
   payloadSchema: ZodType<TPayload>;
   execute: (payload: TPayload, twenty: TwentyGraphqlClient) => Promise<TResult>;
+  // A tool marked true is never callable via ControlledToolApiService.callTool
+  // directly — only ApprovalService.propose/decide may reach it, and only
+  // after a founder approves. See ticket #25's ADR for why this is a fact
+  // about the tool's registration, not something a caller can opt out of.
+  requiresApproval?: boolean;
 };
 
 export type TwentyGraphqlClient = {
@@ -31,6 +36,7 @@ export type RegisteredTool = {
   requiredScope: string;
   payloadSchema: ZodType<unknown>;
   execute: (payload: unknown, twenty: TwentyGraphqlClient) => Promise<unknown>;
+  requiresApproval?: boolean;
 };
 
 export const registerTool = <TPayload, TResult>(
@@ -40,4 +46,5 @@ export const registerTool = <TPayload, TResult>(
   requiredScope: tool.requiredScope,
   payloadSchema: tool.payloadSchema as unknown as RegisteredTool['payloadSchema'],
   execute: tool.execute as unknown as RegisteredTool['execute'],
+  requiresApproval: tool.requiresApproval,
 });

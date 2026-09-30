@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { ControlledToolApiService } from './controlled-tool-api.service';
 import {
   ActionIdReusedError,
+  ApprovalRequiredError,
   InvalidPayloadError,
   PermissionScopeError,
   UnknownToolError,
@@ -189,5 +190,99 @@ describe('ControlledToolApiService', () => {
       primaryEmail: 'jane@example.com',
     });
     expect(twentyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  describe('approval-required tools', () => {
+    const noteScopedIdentity: AgentIdentity = {
+      agentId: 'approval-execution',
+      scopes: ['note:write'],
+    };
+
+    it('rejects a direct callTool call to a tool that requires approval', async () => {
+      await expect(
+        service.callTool(
+          noteScopedIdentity,
+          'add-proof-note-to-test-contact',
+          { title: 'hello' },
+          'action-8',
+        ),
+      ).rejects.toThrow(ApprovalRequiredError);
+
+      expect(twentyRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects callApprovedTool for a tool that does not require approval', async () => {
+      await expect(
+        service.callApprovedTool(
+          readScopedIdentity,
+          'lookup-person-by-email',
+          { email: 'jane@example.com' },
+          'action-9',
+        ),
+      ).rejects.toThrow('does not require approval');
+    });
+
+    it('executes an approval-required tool via callApprovedTool', async () => {
+      twentyRequest
+        .mockResolvedValueOnce({ people: { edges: [{ node: { id: 'contact-1' } }] } }) // find contact
+        .mockResolvedValueOnce({ notes: { edges: [] } }) // find note (none yet)
+        .mockResolvedValueOnce({ createNote: { id: 'note-1' } }) // create note
+        .mockResolvedValueOnce({ createNoteTarget: { id: 'note-target-1' } }); // link to contact
+
+      const result = await service.callApprovedTool(
+        noteScopedIdentity,
+        'add-proof-note-to-test-contact',
+        { title: 'proof note' },
+        'action-10',
+      );
+
+      expect(result).toEqual({ noteId: 'note-1', personId: 'contact-1', alreadyExisted: false });
+      expect(twentyRequest).toHaveBeenCalledTimes(4);
+    });
+
+    it('is idempotent: a second call for the same title returns the existing note without creating a new one', async () => {
+      twentyRequest.mockResolvedValueOnce({ people: { edges: [{ node: { id: 'contact-1' } }] } }).mockResolvedValueOnce({
+        notes: {
+          edges: [
+            { node: { id: 'note-1', noteTargets: { edges: [{ node: { targetPersonId: 'contact-1' } }] } } },
+          ],
+        },
+      }); // already exists, linked to this exact contact
+
+      const result = await service.callApprovedTool(
+        noteScopedIdentity,
+        'add-proof-note-to-test-contact',
+        { title: 'proof note' },
+        'action-11',
+      );
+
+      expect(result).toEqual({ noteId: 'note-1', personId: 'contact-1', alreadyExisted: true });
+      expect(twentyRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not mistake a same-titled note linked to a different contact for "already done"', async () => {
+      twentyRequest
+        .mockResolvedValueOnce({ people: { edges: [{ node: { id: 'contact-1' } }] } }) // find contact
+        .mockResolvedValueOnce({
+          notes: {
+            edges: [
+              // Same title, but targets some other contact — must not short-circuit.
+              { node: { id: 'unrelated-note', noteTargets: { edges: [{ node: { targetPersonId: 'someone-else' } }] } } },
+            ],
+          },
+        })
+        .mockResolvedValueOnce({ createNote: { id: 'note-2' } })
+        .mockResolvedValueOnce({ createNoteTarget: { id: 'note-target-2' } });
+
+      const result = await service.callApprovedTool(
+        noteScopedIdentity,
+        'add-proof-note-to-test-contact',
+        { title: 'proof note' },
+        'action-12',
+      );
+
+      expect(result).toEqual({ noteId: 'note-2', personId: 'contact-1', alreadyExisted: false });
+      expect(twentyRequest).toHaveBeenCalledTimes(4);
+    });
   });
 });
