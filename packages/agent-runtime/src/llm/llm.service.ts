@@ -2,11 +2,22 @@ import { createFireworks } from '@ai-sdk/fireworks';
 import { createOpenAI } from '@ai-sdk/openai';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { generateText } from 'ai';
+import { type ModelMessage, type ToolSet, generateText } from 'ai';
 
 import { GuardDetectionError } from '../llm-guard/errors';
 import { LlmGuardService } from '../llm-guard/llm-guard.service';
 import { TelegramBotService } from '../telegram/telegram-bot.service';
+
+export type LlmToolCall = {
+  toolCallId: string;
+  toolName: string;
+  input: unknown;
+};
+
+export type GenerateWithToolsResult = {
+  text: string;
+  toolCalls: LlmToolCall[];
+};
 
 // Reconfirmed against Fireworks' and OpenAI's live catalogs on 2026-09-24 (ticket #17)
 // rather than trusting the spec discussion — check again if either provider deprecates
@@ -51,6 +62,30 @@ export class LlmService {
     await this.guardOutput(prompt, text);
 
     return text;
+  }
+
+  // For a tool-calling agent (ticket #43's Manager): one non-looping model
+  // call per turn — the caller (a DeepAgents/LangGraph graph) drives the
+  // multi-turn tool-call loop itself, feeding results back as new messages.
+  // Still goes through the same guard/fallback wiring as generate() above:
+  // only the newest message in the conversation is scanned as input (not the
+  // whole accumulated history on every turn, which would re-scan already
+  // -cleared content and waste guard calls), and any resulting text is
+  // scanned as output exactly like generate() does.
+  async generateWithTools(messages: ModelMessage[], tools: ToolSet): Promise<GenerateWithToolsResult> {
+    const latestText = extractText(messages[messages.length - 1]);
+
+    if (latestText) {
+      await this.guardInput(latestText);
+    }
+
+    const result = await this.generateWithToolsFromProvider(messages, tools);
+
+    if (result.text) {
+      await this.guardOutput(latestText, result.text);
+    }
+
+    return result;
   }
 
   private async guardInput(prompt: string): Promise<void> {
@@ -102,27 +137,141 @@ export class LlmService {
   }
 
   private async generateFromProvider(prompt: string): Promise<string> {
-    try {
-      const { text } = await generateText({
-        model: this.fireworks(FIREWORKS_MODEL_ID),
-        prompt,
-        maxRetries: 1,
-        abortSignal: AbortSignal.timeout(FIREWORKS_TIMEOUT_MS),
-      });
+    return this.withFireworksFallback(
+      async () => {
+        const { text } = await generateText({
+          model: this.fireworks(FIREWORKS_MODEL_ID),
+          prompt,
+          maxRetries: 1,
+          abortSignal: AbortSignal.timeout(FIREWORKS_TIMEOUT_MS),
+        });
 
-      return text;
+        return text;
+      },
+      async () => {
+        const { text } = await generateText({
+          model: this.openai(OPENAI_FALLBACK_MODEL_ID),
+          prompt,
+          abortSignal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
+        });
+
+        return text;
+      },
+    );
+  }
+
+  private async generateWithToolsFromProvider(
+    messages: ModelMessage[],
+    tools: ToolSet,
+  ): Promise<GenerateWithToolsResult> {
+    return this.withFireworksFallback(
+      async () => {
+        const result = await generateText({
+          model: this.fireworks(FIREWORKS_MODEL_ID),
+          messages,
+          tools,
+          // DeepAgents builds its own system message as the first entry in
+          // `messages` (ticket #43's LlmServiceChatModel passes it through
+          // unchanged) — the AI SDK rejects that by default, wanting system
+          // content passed via a separate `instructions` option instead.
+          // Allowing it here keeps the message array DeepAgents actually
+          // produces instead of this service having to split it apart.
+          allowSystemInMessages: true,
+          maxRetries: 1,
+          abortSignal: AbortSignal.timeout(FIREWORKS_TIMEOUT_MS),
+        });
+
+        return toGenerateWithToolsResult(result);
+      },
+      async () => {
+        const result = await generateText({
+          model: this.openai(OPENAI_FALLBACK_MODEL_ID),
+          messages,
+          tools,
+          allowSystemInMessages: true,
+          abortSignal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
+        });
+
+        return toGenerateWithToolsResult(result);
+      },
+    );
+  }
+
+  private async withFireworksFallback<TResult>(
+    callFireworks: () => Promise<TResult>,
+    callOpenAI: () => Promise<TResult>,
+  ): Promise<TResult> {
+    try {
+      return await callFireworks();
     } catch (error) {
       this.logger.warn(
         `Fireworks generate() failed, falling over to OpenAI: ${error instanceof Error ? error.message : String(error)}`,
       );
 
-      const { text } = await generateText({
-        model: this.openai(OPENAI_FALLBACK_MODEL_ID),
-        prompt,
-        abortSignal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
-      });
-
-      return text;
+      return await callOpenAI();
     }
   }
+}
+
+function extractText(message: ModelMessage | undefined): string {
+  if (!message) {
+    return '';
+  }
+
+  if (typeof message.content === 'string') {
+    return message.content;
+  }
+
+  if (Array.isArray(message.content)) {
+    // A tool-result part is included too, not just text: it's real CRM data
+    // flowing back from Twenty through a tool call, which can carry
+    // attacker-planted content (a note body, say) just as easily as typed
+    // user input — skipping the scan whenever the newest message happens to
+    // be a tool result would leave exactly the turn LLM Guard's injection
+    // scanner exists for unscanned.
+    return message.content
+      .map((part) => {
+        if (part.type === 'text') {
+          return part.text;
+        }
+
+        if (part.type === 'tool-result') {
+          return extractToolResultText(part.output);
+        }
+
+        return '';
+      })
+      .join('');
+  }
+
+  return '';
+}
+
+function extractToolResultText(output: { type: string; value?: unknown }): string {
+  if (output.type === 'text' && typeof output.value === 'string') {
+    return output.value;
+  }
+
+  // Any other output shape (json, error, execution-denied, etc.) still needs
+  // to reach the guard scan — stringified is enough for a text-based scanner
+  // to inspect, and output.value may not even exist on every variant.
+  try {
+    return JSON.stringify(output.value ?? output);
+  } catch {
+    return String(output.value ?? output);
+  }
+}
+
+function toGenerateWithToolsResult(result: {
+  text: string;
+  toolCalls: { toolCallId: string; toolName: string; input: unknown }[];
+}): GenerateWithToolsResult {
+  return {
+    text: result.text,
+    toolCalls: result.toolCalls.map((call) => ({
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      input: call.input,
+    })),
+  };
 }

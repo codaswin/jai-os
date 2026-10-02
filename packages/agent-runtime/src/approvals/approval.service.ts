@@ -34,13 +34,15 @@ const EXPIRY_SWEEP_INTERVAL_MS = 60_000;
 const DEMO_ACTION_ID = 'approval-demo';
 
 // Used for every approval-gated tool call this service executes. Broad
-// enough to cover today's one real gated tool (ticket #25); a Phase 3 agent
-// proposing its own approval-gated actions will need real per-caller
-// identity propagation, which is explicitly out of scope here — see
-// CONTEXT.md.
+// enough to cover every gated tool registered so far (ticket #25's proof
+// action, ticket #43's generic CRM writes); real per-caller identity
+// propagation for a Phase 3+ agent proposing its own approval-gated actions
+// is still explicitly out of scope here — see CONTEXT.md. A new
+// approval-gated tool needing a scope outside this list will fail loudly
+// with PermissionScopeError, not silently execute under the wrong identity.
 const APPROVAL_EXECUTION_IDENTITY: AgentIdentity = {
   agentId: 'approval-execution',
-  scopes: ['note:write'],
+  scopes: ['note:write', 'crm:write'],
 };
 
 @Injectable()

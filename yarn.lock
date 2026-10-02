@@ -9871,9 +9871,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@langchain/core@npm:1.2.11":
-  version: 1.2.11
-  resolution: "@langchain/core@npm:1.2.11"
+"@langchain/core@npm:1.2.13":
+  version: 1.2.13
+  resolution: "@langchain/core@npm:1.2.13"
   dependencies:
     "@cfworker/json-schema": "npm:^4.0.2"
     "@standard-schema/spec": "npm:^1.1.0"
@@ -9882,7 +9882,7 @@ __metadata:
     mustache: "npm:^4.2.0"
     p-queue: "npm:^6.6.2"
     zod: "npm:^3.25.76 || ^4"
-  checksum: 10c0/a02af004c58db256fbd48ef948c97adaa5a58153db834fb2fe7db4943814d09a053bdeb038f1b2e79d36f9e79c5dbacfee60714686e0b7f86fb3da7851580585
+  checksum: 10c0/d709d4c3896110d4a8b95ed51e555347e0574afbb4198d2f5c52801a47b52cee2d1e622606150becd3f62d2a81a3a1782d7a6ba30503c3cdab974c2ee85a22c5
   languageName: node
   linkType: hard
 
@@ -9928,6 +9928,27 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@langchain/langgraph-sdk@npm:~1.12.0":
+  version: 1.12.0
+  resolution: "@langchain/langgraph-sdk@npm:1.12.0"
+  dependencies:
+    "@langchain/protocol": "npm:^0.0.19"
+    "@types/json-schema": "npm:^7.0.15"
+    p-queue: "npm:^9.0.1"
+    p-retry: "npm:^7.1.1"
+  peerDependencies:
+    "@langchain/core": ^1.1.48
+    react: ^18 || ^19
+    react-dom: ^18 || ^19
+  peerDependenciesMeta:
+    react:
+      optional: true
+    react-dom:
+      optional: true
+  checksum: 10c0/bf06598965b7c6e72a73aee1d05a0e78ca758b4596c6198a0bf5141ee042c53c7c9434a7f4a74a65311be5196c76a69ce691ef9405e1f8d5ccb89510d5dc8d6e
+  languageName: node
+  linkType: hard
+
 "@langchain/langgraph@npm:1.4.16":
   version: 1.4.16
   resolution: "@langchain/langgraph@npm:1.4.16"
@@ -9940,6 +9961,21 @@ __metadata:
     "@langchain/core": ^1.1.48
     zod: ^3.25.32 || ^4.2.0
   checksum: 10c0/5e0135406234d0db9bfc2bc46553a726b7364432662b73d74fe9d7b4ff419c4026897b899f147ccfdef073d968a0e77719ded2d760e14915187607461946d970
+  languageName: node
+  linkType: hard
+
+"@langchain/langgraph@npm:^1.4.13":
+  version: 1.4.18
+  resolution: "@langchain/langgraph@npm:1.4.18"
+  dependencies:
+    "@langchain/langgraph-checkpoint": "npm:^1.1.5"
+    "@langchain/langgraph-sdk": "npm:~1.12.0"
+    "@langchain/protocol": "npm:^0.0.19"
+    "@standard-schema/spec": "npm:1.1.0"
+  peerDependencies:
+    "@langchain/core": ^1.1.48
+    zod: ^3.25.32 || ^4.2.0
+  checksum: 10c0/f0ee65d42fc7df1f8ad44ef2ea4d251d9a2f1c71e46d95a0f37a51ff10c1d731fc13563c406470f7c28f1db6d53eb37c267f1925b83a9c83d20a6fc2a77bd4f4
   languageName: node
   linkType: hard
 
@@ -24923,7 +24959,7 @@ __metadata:
     "@arizeai/openinference-core": "npm:2.7.1"
     "@arizeai/openinference-semantic-conventions": "npm:2.12.0"
     "@arizeai/openinference-vercel": "npm:3.2.1"
-    "@langchain/core": "npm:1.2.11"
+    "@langchain/core": "npm:1.2.13"
     "@langchain/langgraph": "npm:1.4.16"
     "@langchain/langgraph-checkpoint": "npm:1.1.5"
     "@langchain/langgraph-checkpoint-postgres": "npm:1.0.5"
@@ -24945,8 +24981,10 @@ __metadata:
     "@types/pg": "npm:^8.15.6"
     ai: "npm:7.0.106"
     bullmq: "npm:6.3.8"
+    deepagents: "npm:1.14.1"
     ioredis: "npm:5.11.1"
     jest: "npm:29.7.0"
+    langchain: "npm:1.5.14"
     pg: "npm:^8.12.0"
     reflect-metadata: "npm:0.2.2"
     rxjs: "npm:7.8.1"
@@ -29334,6 +29372,25 @@ __metadata:
   version: 0.1.4
   resolution: "deep-is@npm:0.1.4"
   checksum: 10c0/7f0ee496e0dff14a573dc6127f14c95061b448b87b995fc96c017ce0a1e66af1675e73f1d6064407975bc4ea6ab679497a29fff7b5b9c4e99cb10797c1ad0b4c
+  languageName: node
+  linkType: hard
+
+"deepagents@npm:1.14.1":
+  version: 1.14.1
+  resolution: "deepagents@npm:1.14.1"
+  dependencies:
+    fast-glob: "npm:^3.3.3"
+    micromatch: "npm:^4.0.8"
+    yaml: "npm:^2.8.2"
+    zod: "npm:^4.3.6"
+  peerDependencies:
+    "@langchain/core": ^1.2.9
+    "@langchain/langgraph": ^1.4.10
+    "@langchain/langgraph-checkpoint": ^1.1.5
+    "@langchain/langgraph-sdk": ^1.9.23
+    langchain: ^1.5.10
+    langsmith: ">=0.7.1 <0.10.0"
+  checksum: 10c0/b3310f22033acff224ab27d401536ad7c2d2d3ff7d197173aeb1e4691f4c68a3ef487dc4faa4a58070e658e08a0ac75d461a0f422dd8ac8fb36dfc523d526530
   languageName: node
   linkType: hard
 
@@ -37806,6 +37863,20 @@ __metadata:
   version: 1.14.3
   resolution: "ky@npm:1.14.3"
   checksum: 10c0/8e91c9512c8f1501201108ad58ed437eaf3f5b0a0da842bd846d785932426e84a31cf51d0fffce1921d4e70e26465a9b2b89ed2477822975568258a1fa68a740
+  languageName: node
+  linkType: hard
+
+"langchain@npm:1.5.14":
+  version: 1.5.14
+  resolution: "langchain@npm:1.5.14"
+  dependencies:
+    "@langchain/langgraph": "npm:^1.4.13"
+    "@langchain/langgraph-checkpoint": "npm:^1.1.5"
+    langsmith: "npm:>=0.5.0 <1.0.0"
+    zod: "npm:^3.25.76 || ^4"
+  peerDependencies:
+    "@langchain/core": ^1.2.13
+  checksum: 10c0/dfa6f7ca8758b3e232628c1466a0072e5a36264705945b8b34b427bb349a8a9bf252a068a76395c00df69a0117cc196ce7fb4b37d1c86ea471823f4343ecd58e
   languageName: node
   linkType: hard
 
@@ -54115,6 +54186,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"yaml@npm:^2.8.2":
+  version: 2.9.1
+  resolution: "yaml@npm:2.9.1"
+  bin:
+    yaml: bin.mjs
+  checksum: 10c0/9d06676ef02b89559a8b10a71882bd2cdae81e8393dc8dbc871615c3259475d9609ad973d19cb3c9e71e72d6206e3d1e7aa241c7e55f3d16fd2e77db305827d6
+  languageName: node
+  linkType: hard
+
 "yargs-parser@npm:21.1.1, yargs-parser@npm:^21.0.1, yargs-parser@npm:^21.1.1":
   version: 21.1.1
   resolution: "yargs-parser@npm:21.1.1"
@@ -54522,7 +54602,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zod@npm:^3.25.76 || ^4, zod@npm:^4.6.5":
+"zod@npm:^3.25.76 || ^4, zod@npm:^4.3.6, zod@npm:^4.6.5":
   version: 4.6.5
   resolution: "zod@npm:4.6.5"
   checksum: 10c0/32eb6c5e98becbe045675b2141c3611451c16ba567f9779231d79af41c4d651ca1c22f154aef7e6c6e77b929f23e43f1154ca05b82e119e922353725d6776af5
