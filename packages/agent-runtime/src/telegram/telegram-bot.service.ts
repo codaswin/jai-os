@@ -22,6 +22,10 @@ type TelegramGetUpdatesResponse = {
 
 export type ApprovalDecision = 'approved' | 'rejected';
 export type ApprovalCallbackHandler = (actionId: string, decision: ApprovalDecision) => Promise<void>;
+// Returns the reply text to send back on the same chat — the handler (the
+// Manager agent, ticket #44) owns producing a response, this service only
+// owns getting the message to it and the reply back.
+export type FounderMessageHandler = (chatId: string, text: string) => Promise<string>;
 
 const POLL_TIMEOUT_SECONDS = 30;
 // Longer than the server-side long-poll window above, so a hung connection
@@ -44,9 +48,16 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   // never be silently dropped by a shutdown that starts mid-processing —
   // tracked here so onModuleDestroy can wait for every one of them to finish.
   private readonly inFlightCallbacks = new Set<Promise<void>>();
+  // Same reasoning as inFlightCallbacks, separate set: a plain message and a
+  // callback query are independent flows and shouldn't block each other's
+  // shutdown bookkeeping.
+  private readonly inFlightMessages = new Set<Promise<void>>();
   // A single handler, not a list: exactly one consumer (ApprovalService) ever
   // needs approve/reject button presses, and it registers once at boot.
   private approvalCallbackHandler: ApprovalCallbackHandler | undefined;
+  // Same single-handler reasoning: exactly one consumer (ManagerAgentService,
+  // ticket #44) ever needs plain founder messages.
+  private founderMessageHandler: FounderMessageHandler | undefined;
 
   constructor(private readonly configService: ConfigService) {
     const botToken = this.configService.getOrThrow<string>('TELEGRAM_BOT_TOKEN');
@@ -68,6 +79,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     this.shutdownController.abort();
     await this.pollingPromise;
     await Promise.all(this.inFlightCallbacks);
+    await Promise.all(this.inFlightMessages);
   }
 
   async sendAlert(text: string): Promise<void> {
@@ -101,6 +113,12 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   // comment above.
   onApprovalCallback(handler: ApprovalCallbackHandler): void {
     this.approvalCallbackHandler = handler;
+  }
+
+  // Exactly one registration is expected, at module init — see the field
+  // comment above.
+  onFounderMessage(handler: FounderMessageHandler): void {
+    this.founderMessageHandler = handler;
   }
 
   private async pollForUpdates(): Promise<void> {
@@ -159,6 +177,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
 
     const chatId = update.message?.chat.id;
+    const text = update.message?.text;
 
     if (chatId === undefined || String(chatId) !== this.founderChatId) {
       if (chatId !== undefined) {
@@ -168,7 +187,48 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.logger.log(`Received message from founder chat: ${update.message?.text ?? ''}`);
+    if (!text) {
+      return;
+    }
+
+    // Logged unconditionally, not only on the no-handler path below — an
+    // operator debugging a wrong CRM write or an unexpected reply needs to
+    // see what the founder actually typed, and that's otherwise the only
+    // record of it (the Manager's own reasoning isn't logged here).
+    this.logger.log(`Received message from founder chat: ${text}`);
+
+    if (!this.founderMessageHandler) {
+      // No consumer registered (e.g. ManagerAgentModule not loaded) — logged
+      // separately so this specific failure mode (vs. a normally-handled
+      // message) is distinguishable in the logs.
+      this.logger.warn('No founder-message handler is registered — the message above was dropped.');
+
+      return;
+    }
+
+    // Fire-and-forget from the poll loop's perspective, same reasoning as
+    // processCallbackQuery below — a slow or failing Manager turn must never
+    // stall processing the next update. Tracked in inFlightMessages so
+    // onModuleDestroy can still wait for it.
+    const promise = this.founderMessageHandler(String(chatId), text)
+      // Sent to the chatId the handler was actually given, not sendAlert's
+      // hardcoded founderChatId — the two are equal today (the guard above
+      // only ever invokes the handler for the founder's own chat), but this
+      // is the real reply-routing path FounderMessageHandler's own contract
+      // promises, not a shortcut that happens to coincide with it.
+      .then((reply) =>
+        this.postToTelegram(
+          'sendMessage',
+          { chat_id: String(chatId), text: reply },
+          'Telegram sendMessage (founder reply)',
+        ),
+      )
+      .catch((error) =>
+        this.logger.error('Failed to process a founder message', error instanceof Error ? error.stack : error),
+      )
+      .finally(() => this.inFlightMessages.delete(promise));
+
+    this.inFlightMessages.add(promise);
   }
 
   // Telegram expects every callback_query to be answered — otherwise the

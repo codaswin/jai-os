@@ -13,6 +13,7 @@ import { lookupCrmRecordTool } from '../controlled-tool-api/tools/crm/lookup-crm
 import { updateCrmRecordTool } from '../controlled-tool-api/tools/crm/update-crm-record.tool';
 import { type AgentIdentity } from '../controlled-tool-api/types';
 import { LlmService } from '../llm/llm.service';
+import { TelegramBotService } from '../telegram/telegram-bot.service';
 import { LlmServiceChatModel } from './llm-service-chat-model';
 
 // Ticket #42's own documented scope boundary: broad enough for every
@@ -43,6 +44,13 @@ export type ManagerMessageResult = {
   reply: string;
 };
 
+// DeepAgents' final turn in a run can in principle end on a message with no
+// text (e.g. a tool-call-only message), and an empty string sent as a
+// Telegram message body is rejected by Telegram's own API (400) — this
+// fallback means the founder always gets *something* back rather than
+// silence plus a swallowed server-side error.
+const DEFAULT_EMPTY_REPLY = "I don't have anything further to add on that.";
+
 const MANAGER_SYSTEM_PROMPT = `You are the Manager agent for a CRM, speaking only with the founder (the one admin user who can reach you).
 
 You can look up, create, and update People, Companies, Opportunities, and Notes, and look up (but never create or assign) Tasks. You have no access to Invoices at all — do not claim you can create, update, or look one up.
@@ -66,13 +74,35 @@ export class ManagerAgentService implements OnModuleInit {
   private readonly logger = new Logger(ManagerAgentService.name);
   private agent: DeepAgent | undefined;
   private initPromise: Promise<void> = Promise.resolve();
+  // Keyed by thread_id (not raw conversationKey) — serializes turns within
+  // one conversation without serializing unrelated conversations against
+  // each other. See handleMessage's own comment on why this exists.
+  private readonly inFlightByThread = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly llmService: LlmService,
     private readonly controlledToolApi: ControlledToolApiService,
     private readonly approvalService: ApprovalService,
     private readonly agentGraph: AgentGraphService,
-  ) {}
+    private readonly telegramBot: TelegramBotService,
+  ) {
+    // Registered here, not in onModuleInit — same reasoning ApprovalService's
+    // own constructor-time job-handler registration documents: Nest builds
+    // every provider before calling any lifecycle hook, but does NOT
+    // guarantee which module's onModuleInit runs first. TelegramBotService's
+    // own onModuleInit starts polling immediately; if this registration
+    // waited for onModuleInit too, a buffered update arriving before this
+    // module's hook happened to run would find no handler and be silently
+    // dropped. The constructor phase is the one boundary Nest does guarantee
+    // precedes every onModuleInit in the app. A message arriving before
+    // initialize() finishes still just waits inside handleMessage's own
+    // `await this.initPromise`.
+    this.telegramBot.onFounderMessage((chatId, text) =>
+      this.handleMessage({ channel: 'telegram', conversationKey: chatId, text }).then(
+        (result) => result.reply,
+      ),
+    );
+  }
 
   onModuleInit(): void {
     this.initPromise = this.initialize();
@@ -104,18 +134,43 @@ export class ManagerAgentService implements OnModuleInit {
   async handleMessage(input: ManagerMessageInput): Promise<ManagerMessageResult> {
     await this.initPromise;
 
-    if (!this.agent) {
+    const agent = this.agent;
+
+    if (!agent) {
       throw new Error('Manager agent failed to initialize');
     }
 
     const threadId = buildThreadId(input.channel, input.conversationKey);
-    const result = await this.agent.invoke(
-      { messages: [new HumanMessage(input.text)] },
-      { configurable: { thread_id: threadId } },
-    );
-    const lastMessage = result.messages[result.messages.length - 1];
+    const invoke = async (): Promise<ManagerMessageResult> => {
+      const result = await agent.invoke(
+        { messages: [new HumanMessage(input.text)] },
+        { configurable: { thread_id: threadId } },
+      );
+      const lastMessage = result.messages[result.messages.length - 1];
 
-    return { reply: lastMessage?.text ?? '' };
+      return { reply: lastMessage?.text || DEFAULT_EMPTY_REPLY };
+    };
+
+    // LangGraph doesn't serialize concurrent invokes against the same
+    // checkpointed thread_id itself — two messages on the same conversation
+    // arriving close together (the founder sending a quick follow-up before
+    // a slow reply lands) would otherwise race on the same checkpoint, and
+    // one message's effect could be silently lost. Chaining onto whatever's
+    // already in flight for this thread serializes them; `.catch(() => {})`
+    // on the prior turn means one failed turn doesn't permanently wedge the
+    // conversation for every turn after it.
+    const previousTurn = this.inFlightByThread.get(threadId) ?? Promise.resolve();
+    const thisTurn = previousTurn.catch(() => {}).then(invoke);
+
+    this.inFlightByThread.set(threadId, thisTurn);
+
+    try {
+      return await thisTurn;
+    } finally {
+      if (this.inFlightByThread.get(threadId) === thisTurn) {
+        this.inFlightByThread.delete(threadId);
+      }
+    }
   }
 
   private buildLookupTool() {
