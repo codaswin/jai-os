@@ -42,6 +42,11 @@ export class AgentGraphService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AgentGraphService.name);
   private readonly checkpointer: PostgresSaver;
   private initPromise: Promise<void> = Promise.resolve();
+  // Distinct from a failed demo run (best-effort, logged and swallowed below)
+  // — this tracks whether the checkpointer itself is actually usable, so a
+  // real caller like getCheckpointer() can throw instead of silently handing
+  // back a PostgresSaver whose setup() never completed.
+  private checkpointerSetupError: Error | undefined;
 
   constructor(configService: ConfigService) {
     this.checkpointer = PostgresSaver.fromConnString(
@@ -65,7 +70,23 @@ export class AgentGraphService implements OnModuleInit, OnModuleDestroy {
   private async initializeAndRunDemo(): Promise<void> {
     try {
       await this.checkpointer.setup();
+    } catch (error) {
+      // Recorded, not just logged: setup() failing means the checkpointer is
+      // unusable for every caller, not only this file's own demo — swallowing
+      // it the same way as a demo failure would let getCheckpointer() hand
+      // back a checkpointer that silently fails on first real use instead of
+      // surfacing the real problem to whoever's waiting on it.
+      this.checkpointerSetupError =
+        error instanceof Error ? error : new Error(String(error));
+      this.logger.error(
+        'Agent graph checkpointer setup failed — the checkpointer is unusable',
+        error instanceof Error ? error.stack : error,
+      );
 
+      return;
+    }
+
+    try {
       const count = await this.runDemo();
 
       this.logger.log(
@@ -111,5 +132,20 @@ export class AgentGraphService implements OnModuleInit, OnModuleDestroy {
       .compile({ checkpointer: this.checkpointer });
 
     await graph.invoke({ payload, proposedAt: '' }, { configurable: { thread_id: threadId } });
+  }
+
+  // Ticket #43: the Manager agent's own DeepAgents graph needs a checkpointer
+  // too, and — same reasoning as checkpointProofAction above — reuses this
+  // one Postgres connection rather than opening a new one. Async because
+  // the checkpointer isn't safe to use until this.checkpointer.setup() (run
+  // inside initializeAndRunDemo) has completed.
+  async getCheckpointer(): Promise<PostgresSaver> {
+    await this.initPromise;
+
+    if (this.checkpointerSetupError) {
+      throw this.checkpointerSetupError;
+    }
+
+    return this.checkpointer;
   }
 }

@@ -1,6 +1,6 @@
 # Agent Runtime
 
-The NestJS service that will host JAI OS's agents. Currently Phase 2 plumbing (`jai-os-docs/08-build-phases.md`): each module below works and is tested in isolation, but nothing wires them together into a real agent yet — that's Phase 3.
+The NestJS service that hosts JAI OS's agents. Phase 2 (`jai-os-docs/08-build-phases.md`) built the plumbing; Phase 3 (issue #42) is building the first real agent, the Manager, on top of it.
 
 ## Language
 
@@ -37,6 +37,20 @@ _Avoid_: fail-open, best-effort scanning.
 **Tracing**:
 Every `LlmService.generate()` call and every `ControlledToolApiService.callTool` call are traces in one Arize Phoenix project — `generate()` automatically via `registerTelemetry` (`src/tracing/tracing.ts`), tool calls via `traceTool` wrapping `callTool`. Best-effort: a tracing-setup failure is logged, never fatal, and `agent-runtime` does not depend on `phoenix` being up to start. Full rationale in `docs/adr/0002-arize-phoenix-tracing.md`, including why loading `@ai-sdk/otel`/`@arizeai/openinference-vercel` needs the `importEsm` indirection in that file rather than a normal import.
 
+**Manager agent core** (ticket #43):
+`ManagerAgentService.handleMessage({ channel, conversationKey, text })` is the one entry point #44 (Telegram) and #45 (widget) both call — `buildThreadId(channel, conversationKey)` is the shared `thread_id` scheme neither ticket should reinvent. Internally a DeepAgents graph (`createDeepAgent`), reusing `AgentGraphService`'s existing Postgres checkpointer (`getCheckpointer()`) rather than a new connection. `LlmServiceChatModel` bridges DeepAgents' LangChain-based model interface to `LlmService.generateWithTools` — a real translation layer (message/tool-call shape conversion only), not new guardrail or provider logic; every Manager LLM call still goes through Phase 2's LLM Guard/Phoenix/Fireworks-OpenAI wiring unchanged. Full reasoning in `docs/adr/0006-manager-agent-core.md`.
+_Avoid_: using DeepAgents' own `interruptOn` human-in-the-loop feature for approval-gated writes — the Manager's tools call `ApprovalService.propose()` directly instead, reusing #22/#25's already-proven approval pipeline rather than re-deriving the same guarantees against a different HITL mechanism.
+_Avoid_: adding a new provider/guardrail path for the Manager's own LLM calls — extend `LlmService` (as `generateWithTools` did) rather than having DeepAgents talk to Fireworks/OpenAI directly.
+
+**CRM tools** (ticket #43):
+`lookup-crm-record` / `create-crm-record` / `update-crm-record` are three generic, `objectType`-dispatched tools (`controlled-tool-api/tools/crm/`) covering People, Companies, Opportunities, and Notes (lookup/create/update) plus Tasks (lookup only) — not thirteen hand-rolled per-type tools. `CRM_OBJECT_REGISTRY` holds each type's GraphQL query/mutation and zod schema; the two write tools' own discriminated-union payload schemas are built from the real per-type schemas (not the registry's type-erased dispatch shape) so `payload.data` narrows correctly. Invoice has no entry in the object-type union at all, and `'task'` has no create/update config — this is what makes both structurally unreachable, not a convention. Opportunity's `stage` field excludes `CUSTOMER` (this workspace's Closed/Won value, confirmed via live introspection) in both create and update schemas.
+_Avoid_: adding a sixth object type or a new write operation without checking whether it needs its own scope — `crm:write` is currently shared across all four writable types; if a future tool needs write access to one type but not another, that's the signal to split back into per-type tools, not to add a new field to the shared config.
+
 ## Not yet true
 
-Per `jai-os-docs/08-build-phases.md` Phase 2, this package's plumbing tickets are all implemented (#15–#25) — see `docs/adr/0005-synthetic-proof-action-and-e2e.md` for the current handoff to Phase 3. No real agent exists yet; `ProofActionService`'s own boot demo proposes (and, once decided, executes) the one synthetic, harmless, always-approval-gated write this package proves end-to-end with, not a real one.
+Per `jai-os-docs/08-build-phases.md`, Phase 2 is fully implemented and merged (#15–#25) — see `docs/adr/0005-synthetic-proof-action-and-e2e.md`. Phase 3 (issue #42) is in progress: the Manager agent core (#43) exists, but it has no entry point yet — #44 (Telegram) and #45 (widget) are what make it reachable by the founder. Task assignment, WhatsApp escalation review, and self-learning are explicitly out of scope until Phase 6/5/7 respectively, even though `manager-agent.md` describes them as the Manager's eventual responsibilities.
+
+**Known pending blockers, discovered by #43, will also affect #44/#45's own live verification:**
+- `FIREWORKS_API_KEY`/`OPENAI_API_KEY` in `ops/.env` are still the literal placeholder `"placeholder-not-yet-generated"` — no real LLM call has ever succeeded in this deployment. Needs real keys before any ticket can live-verify an actual LLM response, not just #43's own.
+- LLM Guard's Anonymize/PII scanner model can't download from Hugging Face's CDN on this VPS (repeated timeouts, zero bytes ever cached) — blocks `LlmService.guardInput` entirely, including the pre-existing `generate()` path. Needs the VPS's connectivity to that CDN host fixed, or a mirror/proxy configured.
+See `docs/adr/0006-manager-agent-core.md`'s Live verification section for the full evidence trail.

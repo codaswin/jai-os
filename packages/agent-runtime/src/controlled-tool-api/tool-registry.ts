@@ -1,4 +1,7 @@
 import { addProofNoteToTestContactTool } from './tools/add-proof-note-to-test-contact.tool';
+import { createCrmRecordTool } from './tools/crm/create-crm-record.tool';
+import { lookupCrmRecordTool } from './tools/crm/lookup-crm-record.tool';
+import { updateCrmRecordTool } from './tools/crm/update-crm-record.tool';
 import { lookupPersonByEmailTool } from './tools/lookup-person-by-email.tool';
 import { registerTool, type RegisteredTool } from './types';
 
@@ -8,4 +11,7 @@ import { registerTool, type RegisteredTool } from './types';
 export const TOOL_REGISTRY: Record<string, RegisteredTool> = {
   [lookupPersonByEmailTool.name]: registerTool(lookupPersonByEmailTool),
   [addProofNoteToTestContactTool.name]: registerTool(addProofNoteToTestContactTool),
+  [lookupCrmRecordTool.name]: registerTool(lookupCrmRecordTool),
+  [createCrmRecordTool.name]: registerTool(createCrmRecordTool),
+  [updateCrmRecordTool.name]: registerTool(updateCrmRecordTool),
 };

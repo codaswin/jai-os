@@ -7,6 +7,7 @@ import { ApprovalModule } from './approvals/approval.module';
 import { ControlledToolApiModule } from './controlled-tool-api/controlled-tool-api.module';
 import { HealthController } from './health/health.controller';
 import { LlmModule } from './llm/llm.module';
+import { ManagerAgentModule } from './manager-agent/manager-agent.module';
 import { ProofActionModule } from './proof-action/proof-action.module';
 import { TelegramModule } from './telegram/telegram.module';
 
@@ -20,6 +21,7 @@ import { TelegramModule } from './telegram/telegram.module';
     AgentInboxModule,
     ApprovalModule,
     ProofActionModule,
+    ManagerAgentModule,
   ],
   controllers: [HealthController],
 })
