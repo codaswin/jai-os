@@ -79,7 +79,7 @@ describe('TelegramBotService', () => {
   });
 
   describe('handleUpdate', () => {
-    it('logs a message from the founder chat', () => {
+    it('logs a message from the founder chat when no handler is registered', () => {
       const logSpy = jest.spyOn(service['logger'], 'log');
 
       service.handleUpdate({
@@ -92,13 +92,16 @@ describe('TelegramBotService', () => {
 
     it('ignores a message from any other chat', () => {
       const logSpy = jest.spyOn(service['logger'], 'log');
+      const handler = jest.fn();
 
+      service.onFounderMessage(handler);
       service.handleUpdate({
         update_id: 1,
         message: { chat: { id: 999999999 }, text: 'hello' },
       });
 
       expect(logSpy).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
     });
 
     it('ignores an update with no message', () => {
@@ -107,6 +110,58 @@ describe('TelegramBotService', () => {
       service.handleUpdate({ update_id: 1 });
 
       expect(logSpy).not.toHaveBeenCalled();
+    });
+
+    it('routes a plain-text message from the founder to the registered handler and sends its reply back', async () => {
+      fetchMock.mockResolvedValue({ ok: true });
+
+      const handler = jest.fn().mockResolvedValue('Jane Doe is a lead.');
+
+      service.onFounderMessage(handler);
+      service.handleUpdate({
+        update_id: 1,
+        message: { chat: { id: Number(founderChatId) }, text: 'Who is Jane Doe?' },
+      });
+
+      await flushMicrotasks();
+
+      expect(handler).toHaveBeenCalledWith(founderChatId, 'Who is Jane Doe?');
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/sendMessage'),
+        expect.objectContaining({
+          body: JSON.stringify({ chat_id: founderChatId, text: 'Jane Doe is a lead.' }),
+        }),
+      );
+    });
+
+    it('does not route a message from any other chat to the registered handler', () => {
+      const handler = jest.fn();
+
+      service.onFounderMessage(handler);
+      service.handleUpdate({
+        update_id: 1,
+        message: { chat: { id: 999999999 }, text: 'hello' },
+      });
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('logs instead of throwing when the registered handler fails', async () => {
+      const logErrorSpy = jest.spyOn(service['logger'], 'error');
+      const handler = jest.fn().mockRejectedValue(new Error('LLM provider unavailable'));
+
+      service.onFounderMessage(handler);
+      service.handleUpdate({
+        update_id: 1,
+        message: { chat: { id: Number(founderChatId) }, text: 'hello' },
+      });
+
+      await flushMicrotasks();
+
+      expect(logErrorSpy).toHaveBeenCalledWith(
+        'Failed to process a founder message',
+        expect.anything(),
+      );
     });
 
     it('routes a callback query from the founder to the registered approval handler', async () => {

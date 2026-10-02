@@ -138,6 +138,7 @@ function buildHarness() {
   const telegramBot = {
     sendApprovalRequest: jest.fn().mockResolvedValue(undefined),
     onApprovalCallback: jest.fn(),
+    onFounderMessage: jest.fn(),
   } as unknown as TelegramBotService;
   const agentInbox = { submit: jest.fn().mockResolvedValue(undefined) } as unknown as AgentInboxService;
 
@@ -159,14 +160,20 @@ function buildHarness() {
     getCheckpointer: jest.fn().mockResolvedValue(memorySaver),
   } as unknown as AgentGraphService;
 
-  const manager = new ManagerAgentService(llmService, controlledToolApi, approvalService, agentGraph);
+  const manager = new ManagerAgentService(
+    llmService,
+    controlledToolApi,
+    approvalService,
+    agentGraph,
+    telegramBot,
+  );
   // onModuleInit only fires through Nest's DI container — this test
   // constructs the service directly, so it's driven by hand, same as
   // approval.service.spec.ts never relies on ApprovalService's own
   // onModuleInit firing automatically.
   manager.onModuleInit();
 
-  return { manager, repository, twentyRequest, llmService, approvalService };
+  return { manager, repository, twentyRequest, llmService, approvalService, telegramBot };
 }
 
 // Each entry is one model turn (DeepAgents calls generateWithTools once per
@@ -363,6 +370,97 @@ describe('ManagerAgentService', () => {
       const hasConversationAContent = JSON.stringify(secondCallMessages).includes('conversation A');
 
       expect(hasConversationAContent).toBe(false);
+    });
+  });
+
+  describe('turn robustness', () => {
+    it('falls back to a default reply when the agent turn ends with no text', async () => {
+      const { manager, llmService } = buildHarness();
+
+      queueTurns(llmService, [{ text: '' }]);
+
+      const result = await manager.handleMessage({
+        channel: 'telegram',
+        conversationKey: 'empty-reply',
+        text: 'do something',
+      });
+
+      expect(result.reply).not.toBe('');
+      expect(result.reply.length).toBeGreaterThan(0);
+    });
+
+    it('serializes two messages on the same conversation instead of invoking the graph concurrently', async () => {
+      const { manager, llmService } = buildHarness();
+      const invokeOrder: string[] = [];
+      const mock = llmService.generateWithTools as jest.Mock;
+
+      mock.mockImplementationOnce(async () => {
+        invokeOrder.push('first-start');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        invokeOrder.push('first-end');
+
+        return { text: 'first reply', toolCalls: [] };
+      });
+      mock.mockImplementationOnce(async () => {
+        invokeOrder.push('second-start');
+
+        return { text: 'second reply', toolCalls: [] };
+      });
+
+      const firstCall = manager.handleMessage({
+        channel: 'telegram',
+        conversationKey: 'same-thread',
+        text: 'first message',
+      });
+      const secondCall = manager.handleMessage({
+        channel: 'telegram',
+        conversationKey: 'same-thread',
+        text: 'second message',
+      });
+
+      const [first, second] = await Promise.all([firstCall, secondCall]);
+
+      expect(invokeOrder).toEqual(['first-start', 'first-end', 'second-start']);
+      expect(first.reply).toBe('first reply');
+      expect(second.reply).toBe('second reply');
+    });
+
+    it('does not let a failed turn permanently wedge later turns on the same conversation', async () => {
+      const { manager, llmService } = buildHarness();
+      const mock = llmService.generateWithTools as jest.Mock;
+
+      mock.mockImplementationOnce(async () => {
+        throw new Error('provider unavailable');
+      });
+      mock.mockImplementationOnce(async () => ({ text: 'recovered', toolCalls: [] }));
+
+      await expect(
+        manager.handleMessage({ channel: 'telegram', conversationKey: 'recovers', text: 'first' }),
+      ).rejects.toThrow('provider unavailable');
+
+      const result = await manager.handleMessage({
+        channel: 'telegram',
+        conversationKey: 'recovers',
+        text: 'second',
+      });
+
+      expect(result.reply).toBe('recovered');
+    });
+  });
+
+  describe('Telegram entry point wiring (ticket #44)', () => {
+    it('registers a founder-message handler on module init that routes through handleMessage using the Telegram channel', async () => {
+      // buildHarness() already calls onModuleInit() once (see its own comment).
+      const { telegramBot, llmService } = buildHarness();
+
+      expect(telegramBot.onFounderMessage).toHaveBeenCalledTimes(1);
+      const registeredHandler = (telegramBot.onFounderMessage as jest.Mock).mock.calls[0][0];
+
+      queueTurns(llmService, [{ text: 'Jane Doe is a lead.' }]);
+
+      const reply = await registeredHandler('999888777', 'Who is Jane Doe?');
+
+      expect(reply).toBe('Jane Doe is a lead.');
     });
   });
 });
