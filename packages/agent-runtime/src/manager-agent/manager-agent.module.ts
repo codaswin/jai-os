@@ -6,10 +6,13 @@ import { ControlledToolApiModule } from '../controlled-tool-api/controlled-tool-
 import { LlmModule } from '../llm/llm.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { ManagerAgentService } from './manager-agent.service';
+import { ManagerWidgetController } from './manager-widget.controller';
+import { TwentyCurrentUserService } from './twenty-current-user.service';
 
 @Module({
   imports: [AgentGraphModule, ApprovalModule, ControlledToolApiModule, LlmModule, TelegramModule],
-  providers: [ManagerAgentService],
+  controllers: [ManagerWidgetController],
+  providers: [ManagerAgentService, TwentyCurrentUserService],
   exports: [ManagerAgentService],
 })
 export class ManagerAgentModule {}

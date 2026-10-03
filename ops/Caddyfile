@@ -1,4 +1,20 @@
 {$DOMAIN} {
 	encode zstd gzip
-	reverse_proxy server:3000
+
+	# The only public route into agent-runtime (ticket #45) — everything else
+	# on that service (health checks, boot demos, Telegram's own long-polling
+	# connection) stays on the private network. Security rests entirely on
+	# the per-request Twenty-token verification this one endpoint does, not
+	# on network-level restriction, so the exposed surface is kept as narrow
+	# as the widget actually needs — an exact path, not a wildcard prefix, so
+	# a future route added to ManagerWidgetController doesn't become public
+	# just by existing.
+	handle /agent-api/widget/message {
+		uri strip_prefix /agent-api
+		reverse_proxy agent-runtime:3100
+	}
+
+	handle {
+		reverse_proxy server:3000
+	}
 }
