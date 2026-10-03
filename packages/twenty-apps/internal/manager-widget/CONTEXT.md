@@ -14,3 +14,6 @@ _Avoid_: trying to read the user's raw session token from cookies/localStorage �
 **`/agent-api/widget/*`**:
 The one path `ops/Caddyfile` exposes publicly for `agent-runtime` — everything else on that service (health checks, boot demos, Telegram polling) stays on the private network. The widget's own `fetch` calls are same-origin through this route, so no CORS configuration exists anywhere in this app or in `agent-runtime`.
 _Avoid_: adding a new public route for anything other than the widget's own endpoint without the same deliberate, narrow-exposure reasoning this one got (see `packages/agent-runtime/docs/adr/0008-widget-entry-point.md`).
+
+**`src/roles/default.role.ts`**:
+This app owns no objects or logic functions, but `yarn twenty apply` still refuses to build without a default role (`defineApplicationRole`) or a `defaultRoleUniversalIdentifier` on `defineApplication()`. Kept at zero access on every flag — there is nothing for this app's own role to need, since all CRM access the Manager performs happens inside `agent-runtime` under its own approval-gated scope, never under this app's identity.
